@@ -4,7 +4,7 @@
   "release": "devnet-v0.1.0-candidate",
   "cluster": "devnet",
   "deploymentStatus": "candidate-not-deployed",
-  "sourceCommit": "1da5df0d78df9974d6227e828225322adc7b571b",
+  "sourceCommit": "0c700b74cbe825716855a9710a41eaaf0c02f47e",
   "build": {
     "command": "NO_DNA=1 cargo build-sbf",
     "solanaCargoBuildSbf": "2.3.10",
