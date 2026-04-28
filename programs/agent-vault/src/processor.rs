@@ -24,8 +24,9 @@ use crate::{
         validate_agent_wallet_pda, validate_global_config_pda, validate_vault_config_pda,
     },
     state::{
-        pack_global_config, pack_vault_config, pack_wallet, unpack_global_config,
-        unpack_vault_config, unpack_wallet, AgentWallet, GlobalConfig, VaultConfig,
+        pack_global_config, pack_vault_config, pack_wallet, read_global_config_bump,
+        read_vault_config_bump, unpack_global_config_after_header,
+        unpack_vault_config_after_header, unpack_wallet, AgentWallet, GlobalConfig, VaultConfig,
         GLOBAL_CONFIG_LEN, PUBKEY_LEN, VAULT_CONFIG_LEN, WALLET_LABEL_OFFSET, WALLET_LEN,
     },
     token_state::{parse_mint, parse_token_account_for_mint, TokenAccount, TokenMint},
@@ -1863,8 +1864,9 @@ fn load_global_config(
 ) -> Result<GlobalConfig, ProgramError> {
     assert_owned_by(account, program_id)?;
     let data = account.try_borrow()?;
-    let config = unpack_global_config(&data)?;
-    validate_global_config_pda(account.address(), config.bump, program_id)?;
+    let bump = read_global_config_bump(&data)?;
+    validate_global_config_pda(account.address(), bump, program_id)?;
+    let config = unpack_global_config_after_header(&data, bump)?;
     Ok(config)
 }
 
@@ -1875,8 +1877,9 @@ fn load_vault_config(
 ) -> Result<VaultConfig, ProgramError> {
     assert_owned_by(account, program_id)?;
     let data = account.try_borrow()?;
-    let config = unpack_vault_config(&data)?;
-    validate_vault_config_pda(account.address(), config.bump, program_id, agent_asset)?;
+    let bump = read_vault_config_bump(&data)?;
+    validate_vault_config_pda(account.address(), bump, program_id, agent_asset)?;
+    let config = unpack_vault_config_after_header(&data, bump)?;
     Ok(config)
 }
 

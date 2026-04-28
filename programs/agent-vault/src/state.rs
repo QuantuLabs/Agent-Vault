@@ -121,6 +121,13 @@ fn validate_header(
 
 pub fn unpack_global_config(data: &[u8]) -> Result<GlobalConfig, ProgramError> {
     let bump = validate_header(data, GLOBAL_CONFIG_LEN, &DISCRIMINATOR_GLOBAL_CONFIG)?;
+    unpack_global_config_after_header(data, bump)
+}
+
+pub fn unpack_global_config_after_header(
+    data: &[u8],
+    bump: u8,
+) -> Result<GlobalConfig, ProgramError> {
     validate_reserved_zero(data, GLOBAL_CONFIG_RESERVED_OFFSET, GLOBAL_CONFIG_LEN)?;
     Ok(GlobalConfig {
         bump,
@@ -132,8 +139,19 @@ pub fn unpack_global_config(data: &[u8]) -> Result<GlobalConfig, ProgramError> {
     })
 }
 
+pub fn read_global_config_bump(data: &[u8]) -> Result<u8, ProgramError> {
+    validate_header(data, GLOBAL_CONFIG_LEN, &DISCRIMINATOR_GLOBAL_CONFIG)
+}
+
 pub fn unpack_vault_config(data: &[u8]) -> Result<VaultConfig, ProgramError> {
     let bump = validate_header(data, VAULT_CONFIG_LEN, &DISCRIMINATOR_VAULT_CONFIG)?;
+    unpack_vault_config_after_header(data, bump)
+}
+
+pub fn unpack_vault_config_after_header(
+    data: &[u8],
+    bump: u8,
+) -> Result<VaultConfig, ProgramError> {
     let flags = read_u16_le(data, VAULT_CONFIG_FLAGS_OFFSET)?;
     if flags != 0 {
         return Err(AgentVaultError::InvalidAccountData.into());
@@ -145,6 +163,10 @@ pub fn unpack_vault_config(data: &[u8]) -> Result<VaultConfig, ProgramError> {
         flags,
         created_at: read_i64_le(data, VAULT_CONFIG_CREATED_AT_OFFSET)?,
     })
+}
+
+pub fn read_vault_config_bump(data: &[u8]) -> Result<u8, ProgramError> {
+    validate_header(data, VAULT_CONFIG_LEN, &DISCRIMINATOR_VAULT_CONFIG)
 }
 
 pub fn unpack_wallet(data: &[u8]) -> Result<AgentWallet, ProgramError> {
