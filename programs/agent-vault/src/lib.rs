@@ -14,6 +14,9 @@ pub mod state;
 pub mod token_state;
 pub mod validation;
 
+#[cfg(kani)]
+mod kani_harness;
+
 use pinocchio::{AccountView, Address, ProgramResult};
 
 pub const ID: Address = Address::new_from_array([

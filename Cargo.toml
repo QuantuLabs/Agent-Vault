@@ -7,7 +7,7 @@ license = "Apache-2.0"
 repository = "https://github.com/QuantuLabs/Agent-Vault"
 
 [workspace.lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_os, values("solana"))'] }
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)', 'cfg(target_os, values("solana"))'] }
 
 [profile.release]
 overflow-checks = true
