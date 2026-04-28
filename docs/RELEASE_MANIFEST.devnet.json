@@ -4,7 +4,7 @@
   "release": "devnet-v0.1.0-candidate",
   "cluster": "devnet",
   "deploymentStatus": "candidate-not-deployed",
-  "sourceCommit": "0c700b74cbe825716855a9710a41eaaf0c02f47e",
+  "sourceCommit": "ffa884e024102508c3c1559052170bc71240088c",
   "build": {
     "command": "NO_DNA=1 cargo build-sbf",
     "solanaCargoBuildSbf": "2.3.10",
@@ -18,8 +18,8 @@
     "id": "36u7KMBuxjExvU6V2nfTX5SnNdYMGUupFiYouLzrgpfW",
     "globalConfigPda": "Fv7ffwFuAZBiCZ6dpBPKEgYEGMXpSArmqvaqfH35Gbod",
     "globalConfigBump": 255,
-    "sbfElfSha256": "c9d84873ea51b750ae7aa0453e406798d3edaa80067bb05f9acecf2ed51bb824",
-    "sbfElfSizeBytes": 147952
+    "sbfElfSha256": "9c9742a4baf71f129f266f3575b6c3302983d3730ad934ead1ce58f76ba06490",
+    "sbfElfSizeBytes": 148128
   },
   "expectedGlobalConfig": {
     "initializer": "2KmHw8VbShuz9xfj3ecEjBM5nPKR5BcYHRDSFfK1286t",
