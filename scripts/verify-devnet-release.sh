@@ -16,6 +16,7 @@ if grep -E "Stack offset|overwrites values in the frame" "$BUILD_LOG" >/dev/null
 fi
 
 cargo test --offline --manifest-path tests/runtime/Cargo.toml
+cargo test --offline --manifest-path tests/runtime/Cargo.toml devnet_release_cost_report -- --nocapture
 NO_DNA=1 ./scripts/verify-formal.sh
 
 node <<'NODE'

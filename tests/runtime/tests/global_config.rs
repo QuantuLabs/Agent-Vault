@@ -33,6 +33,7 @@ use {
     solana_address::{address, Address},
     solana_instruction::{account_meta::AccountMeta, error::InstructionError, Instruction},
     solana_message::Message,
+    solana_rent::Rent,
     solana_signature::Signature,
     solana_transaction::Transaction,
     solana_transaction_error::TransactionError,
@@ -105,6 +106,14 @@ fn ata_address(wallet: &Address, mint: &Address, token_program: &Address) -> Add
 
 fn registry_agent_pda(agent_asset: &Address) -> (Address, u8) {
     Address::find_program_address(&[b"agent", agent_asset.as_ref()], &REGISTRY_PROGRAM)
+}
+
+fn rent_minimum(data_len: usize) -> u64 {
+    Rent::default().minimum_balance(data_len)
+}
+
+fn token_account_rent() -> u64 {
+    rent_minimum(TOKEN_ACCOUNT_LEN)
 }
 
 fn initialize_global_config_ix(fee_lamports: u64) -> Instruction {
@@ -381,7 +390,7 @@ fn install_token_account(
     svm.set_account(
         token_account,
         Account {
-            lamports: 2_039_280,
+            lamports: token_account_rent(),
             data,
             owner: token_program,
             ..Default::default()
@@ -822,6 +831,38 @@ fn execute_cpi_checked_with_target_ix(
         execute_cpi_checked_memo_ix(agent_asset, vault_config, wallet, min_wallet_lamports);
     ix.accounts[5] = AccountMeta::new_readonly(target_program, false);
     ix
+}
+
+fn execute_cpi_checked_noop_ix(
+    agent_asset: Address,
+    vault_config: Address,
+    wallet: Address,
+    min_wallet_lamports: u64,
+) -> Instruction {
+    let mut data = Vec::with_capacity(1 + 6 + 1 + 1 + 10);
+    data.push(TAG_EXECUTE_CPI_CHECKED);
+    data.extend_from_slice(&0u16.to_le_bytes());
+    data.push(0);
+    data.push(0);
+    data.extend_from_slice(&1u16.to_le_bytes());
+    data.push(0);
+    data.push(1);
+    data.push(0);
+    data.push(0);
+    data.extend_from_slice(&min_wallet_lamports.to_le_bytes());
+
+    Instruction {
+        program_id: PROGRAM_ID,
+        accounts: vec![
+            AccountMeta::new_readonly(INITIALIZER, true),
+            AccountMeta::new_readonly(global_config_pda(), false),
+            AccountMeta::new_readonly(vault_config, false),
+            AccountMeta::new_readonly(wallet, false),
+            AccountMeta::new_readonly(agent_asset, false),
+            AccountMeta::new_readonly(MOCK_AMM_PROGRAM, false),
+        ],
+        data,
+    }
 }
 
 fn execute_cpi_checked_wsol_balance_ix(
@@ -1618,55 +1659,75 @@ fn routine_v0_instructions_do_not_charge_protocol_fees() {
     };
 
     let wallet = wallet_pda(&agent_asset, 0);
-    send_unsigned_tx(
+    let create_wallet_cu = send_unsigned_tx(
         &mut svm,
         create_wallet_ix(agent_asset, vault_config, wallet),
     )
     .unwrap();
+    assert!(create_wallet_cu <= 18_000, "create_wallet CU: {create_wallet_cu}");
     let wallet_rent_floor = svm.get_balance(&wallet).unwrap();
     assert_no_fee(&svm);
 
     let wallet_1 = wallet_pda(&agent_asset, 1);
-    send_unsigned_tx(
+    let create_wallet_1_cu = send_unsigned_tx(
         &mut svm,
         create_wallet_ix(agent_asset, vault_config, wallet_1),
     )
     .unwrap();
+    assert!(
+        create_wallet_1_cu <= 18_000,
+        "create_wallet second CU: {create_wallet_1_cu}"
+    );
     assert_no_fee(&svm);
 
-    send_unsigned_tx(
+    let update_label_cu = send_unsigned_tx(
         &mut svm,
         update_wallet_label_ix(agent_asset, vault_config, wallet),
     )
     .unwrap();
+    assert!(
+        update_label_cu <= 17_600,
+        "update_wallet_label CU: {update_label_cu}"
+    );
     assert_no_fee(&svm);
 
-    send_unsigned_tx(&mut svm, deposit_sol_ix(agent_asset, wallet, 1_000_000)).unwrap();
+    let deposit_cu =
+        send_unsigned_tx(&mut svm, deposit_sol_ix(agent_asset, wallet, 1_000_000)).unwrap();
+    assert!(deposit_cu <= 10_700, "deposit_sol CU: {deposit_cu}");
     assert_no_fee(&svm);
 
     let destination = Address::new_unique();
     svm.airdrop(&destination, 1).unwrap();
-    send_unsigned_tx(
+    let withdraw_cu = send_unsigned_tx(
         &mut svm,
         withdraw_sol_ix(agent_asset, wallet, destination, 100_000),
     )
     .unwrap();
+    assert!(withdraw_cu <= 9_700, "withdraw_sol CU: {withdraw_cu}");
     assert_no_fee(&svm);
 
-    send_unsigned_tx(
+    let transfer_sol_cu = send_unsigned_tx(
         &mut svm,
         transfer_sol_ix(agent_asset, 0, wallet, 1, wallet_1, 100_000),
     )
     .unwrap();
+    assert!(
+        transfer_sol_cu <= 15_000,
+        "transfer_sol CU: {transfer_sol_cu}"
+    );
     assert_no_fee(&svm);
 
     let mint = Address::new_unique();
     install_mint(&mut svm, mint, TOKEN_PROGRAM, 6);
-    send_unsigned_tx(
+    let create_ata_cu = send_unsigned_tx(
         &mut svm,
         create_wallet_ata_ix(agent_asset, vault_config, wallet, mint, TOKEN_PROGRAM, 0),
     )
     .unwrap();
+    assert!(
+        create_ata_cu <= 48_000,
+        "create_wallet_ata CU: {create_ata_cu}"
+    );
     assert_no_fee(&svm);
 
     let source_ata = ata_address(&wallet, &mint, &TOKEN_PROGRAM);
@@ -1683,7 +1744,7 @@ fn routine_v0_instructions_do_not_charge_protocol_fees() {
         TOKEN_PROGRAM,
         token_account_data(mint, Address::new_unique(), 0),
     );
-    send_unsigned_tx(
+    let transfer_spl_cu = send_unsigned_tx(
         &mut svm,
         transfer_spl_ix(
             agent_asset,
@@ -1699,11 +1760,15 @@ fn routine_v0_instructions_do_not_charge_protocol_fees() {
         ),
     )
     .unwrap();
+    assert!(
+        transfer_spl_cu <= 31_500,
+        "transfer_spl CU: {transfer_spl_cu}"
+    );
     assert_no_fee(&svm);
 
     let rent_receiver = Address::new_unique();
     svm.airdrop(&rent_receiver, 1).unwrap();
-    send_unsigned_tx(
+    let close_ata_cu = send_unsigned_tx(
         &mut svm,
         close_wallet_ata_ix(
             agent_asset,
@@ -1715,9 +1780,13 @@ fn routine_v0_instructions_do_not_charge_protocol_fees() {
         ),
     )
     .unwrap();
+    assert!(
+        close_ata_cu <= 27_000,
+        "close_wallet_ata CU: {close_ata_cu}"
+    );
     assert_no_fee(&svm);
 
-    let native_reserve = 2_039_280;
+    let native_reserve = token_account_rent();
     let wallet_wsol_ata = ata_address(&wallet, &NATIVE_MINT, &TOKEN_PROGRAM);
     svm.set_account(
         wallet_wsol_ata,
@@ -1729,23 +1798,30 @@ fn routine_v0_instructions_do_not_charge_protocol_fees() {
         },
     )
     .unwrap();
-    send_unsigned_tx(
+    let wrap_sol_cu = send_unsigned_tx(
         &mut svm,
         wrap_sol_ix(agent_asset, vault_config, wallet, wallet_wsol_ata, 250_000),
     )
     .unwrap();
+    assert!(wrap_sol_cu <= 21_600, "wrap_sol CU: {wrap_sol_cu}");
     assert_no_fee(&svm);
 
     send_unsigned_tx(&mut svm, sync_native_ix(wallet_wsol_ata)).unwrap();
-    send_unsigned_tx(&mut svm, unwrap_sol_ix(agent_asset, vault_config, wallet)).unwrap();
+    let unwrap_sol_cu =
+        send_unsigned_tx(&mut svm, unwrap_sol_ix(agent_asset, vault_config, wallet)).unwrap();
+    assert!(unwrap_sol_cu <= 26_200, "unwrap_sol CU: {unwrap_sol_cu}");
     assert_no_fee(&svm);
 
     let current_wallet_balance = svm.get_balance(&wallet).unwrap();
-    send_unsigned_tx(
+    let execute_cpi_cu = send_unsigned_tx(
         &mut svm,
         execute_cpi_checked_memo_ix(agent_asset, vault_config, wallet, current_wallet_balance),
     )
     .unwrap();
+    assert!(
+        execute_cpi_cu <= 50_000,
+        "execute_cpi_checked memo CU: {execute_cpi_cu}"
+    );
     assert_no_fee(&svm);
 
     let excess_lamports = svm.get_balance(&wallet).unwrap() - wallet_rent_floor;
@@ -1756,18 +1832,26 @@ fn routine_v0_instructions_do_not_charge_protocol_fees() {
     .unwrap();
     assert_no_fee(&svm);
 
-    send_unsigned_tx(
+    let close_wallet_cu = send_unsigned_tx(
         &mut svm,
         close_wallet_ix(agent_asset, vault_config, wallet, rent_receiver),
     )
     .unwrap();
+    assert!(
+        close_wallet_cu <= 17_400,
+        "close_wallet CU: {close_wallet_cu}"
+    );
     assert_no_fee(&svm);
 
-    send_unsigned_tx(
+    let reopen_cu = send_unsigned_tx(
         &mut svm,
         reopen_wallet_for_recovery_ix(agent_asset, vault_config, wallet),
     )
     .unwrap();
+    assert!(
+        reopen_cu <= 19_600,
+        "reopen_wallet_for_recovery CU: {reopen_cu}"
+    );
     assert_no_fee(&svm);
 }
 
@@ -2232,6 +2316,223 @@ fn init_create_deposit_and_withdraw_sol_flow() {
 }
 
 #[test]
+fn rent_snapshots_match_active_rent() {
+    let mut svm = runtime();
+    initialize_global_config(&mut svm);
+    svm.airdrop(&FEE_TREASURY, 1).unwrap();
+
+    assert_eq!(
+        svm.get_balance(&global_config_pda()).unwrap(),
+        rent_minimum(GLOBAL_CONFIG_LEN)
+    );
+
+    let agent_asset = Address::new_unique();
+    let (vault_config, agent_account) = install_agent_fixture(&mut svm, agent_asset);
+    send_unsigned_tx(
+        &mut svm,
+        init_vault_config_ix(agent_asset, vault_config, agent_account),
+    )
+    .unwrap();
+    assert_eq!(
+        svm.get_balance(&vault_config).unwrap(),
+        rent_minimum(VAULT_CONFIG_LEN)
+    );
+
+    let wallet = wallet_pda(&agent_asset, 0);
+    send_unsigned_tx(
+        &mut svm,
+        create_wallet_ix(agent_asset, vault_config, wallet),
+    )
+    .unwrap();
+    assert_eq!(svm.get_balance(&wallet).unwrap(), rent_minimum(WALLET_LEN));
+
+    let mint = Address::new_unique();
+    install_mint(&mut svm, mint, TOKEN_PROGRAM, 6);
+    send_unsigned_tx(
+        &mut svm,
+        create_wallet_ata_ix(agent_asset, vault_config, wallet, mint, TOKEN_PROGRAM, 0),
+    )
+    .unwrap();
+    assert_eq!(
+        svm.get_balance(&ata_address(&wallet, &mint, &TOKEN_PROGRAM))
+            .unwrap(),
+        token_account_rent()
+    );
+}
+
+#[test]
+fn devnet_release_cost_report() {
+    let mut svm = runtime();
+    install_mock_amm(&mut svm);
+    initialize_global_config(&mut svm);
+    svm.airdrop(&FEE_TREASURY, 1).unwrap();
+
+    let agent_asset = Address::new_unique();
+    let (vault_config, agent_account) = install_agent_fixture(&mut svm, agent_asset);
+    let init_vault_cu = send_unsigned_tx(
+        &mut svm,
+        init_vault_config_ix(agent_asset, vault_config, agent_account),
+    )
+    .unwrap();
+
+    let wallet = wallet_pda(&agent_asset, 0);
+    let create_wallet_cu = send_unsigned_tx(
+        &mut svm,
+        create_wallet_ix(agent_asset, vault_config, wallet),
+    )
+    .unwrap();
+    let wallet_rent_floor = svm.get_balance(&wallet).unwrap();
+    let update_label_cu = send_unsigned_tx(
+        &mut svm,
+        update_wallet_label_ix(agent_asset, vault_config, wallet),
+    )
+    .unwrap();
+    let wallet_1 = wallet_pda(&agent_asset, 1);
+    let create_wallet_1_cu = send_unsigned_tx(
+        &mut svm,
+        create_wallet_ix(agent_asset, vault_config, wallet_1),
+    )
+    .unwrap();
+    let deposit_cu =
+        send_unsigned_tx(&mut svm, deposit_sol_ix(agent_asset, wallet, 1_000_000)).unwrap();
+
+    let destination = Address::new_unique();
+    svm.airdrop(&destination, 1).unwrap();
+    let withdraw_cu = send_unsigned_tx(
+        &mut svm,
+        withdraw_sol_ix(agent_asset, wallet, destination, 100_000),
+    )
+    .unwrap();
+    let transfer_sol_cu = send_unsigned_tx(
+        &mut svm,
+        transfer_sol_ix(agent_asset, 0, wallet, 1, wallet_1, 100_000),
+    )
+    .unwrap();
+
+    let mint = Address::new_unique();
+    install_mint(&mut svm, mint, TOKEN_PROGRAM, 6);
+    let create_ata_cu = send_unsigned_tx(
+        &mut svm,
+        create_wallet_ata_ix(agent_asset, vault_config, wallet, mint, TOKEN_PROGRAM, 0),
+    )
+    .unwrap();
+    let source_ata = ata_address(&wallet, &mint, &TOKEN_PROGRAM);
+    let token_destination = Address::new_unique();
+    install_token_account(
+        &mut svm,
+        source_ata,
+        TOKEN_PROGRAM,
+        token_account_data(mint, wallet, 25),
+    );
+    install_token_account(
+        &mut svm,
+        token_destination,
+        TOKEN_PROGRAM,
+        token_account_data(mint, Address::new_unique(), 0),
+    );
+    let transfer_spl_cu = send_unsigned_tx(
+        &mut svm,
+        transfer_spl_ix(
+            agent_asset,
+            vault_config,
+            wallet,
+            mint,
+            source_ata,
+            token_destination,
+            TOKEN_PROGRAM,
+            25,
+            6,
+            0,
+        ),
+    )
+    .unwrap();
+    let rent_receiver = Address::new_unique();
+    svm.airdrop(&rent_receiver, 1).unwrap();
+    let close_ata_cu = send_unsigned_tx(
+        &mut svm,
+        close_wallet_ata_ix(
+            agent_asset,
+            vault_config,
+            wallet,
+            mint,
+            TOKEN_PROGRAM,
+            rent_receiver,
+        ),
+    )
+    .unwrap();
+
+    let native_reserve = token_account_rent();
+    let wallet_wsol_ata = ata_address(&wallet, &NATIVE_MINT, &TOKEN_PROGRAM);
+    svm.set_account(
+        wallet_wsol_ata,
+        Account {
+            lamports: native_reserve,
+            data: native_token_account_data(NATIVE_MINT, wallet, 0, native_reserve),
+            owner: TOKEN_PROGRAM,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let wrap_sol_cu = send_unsigned_tx(
+        &mut svm,
+        wrap_sol_ix(agent_asset, vault_config, wallet, wallet_wsol_ata, 250_000),
+    )
+    .unwrap();
+    send_unsigned_tx(&mut svm, sync_native_ix(wallet_wsol_ata)).unwrap();
+    let unwrap_sol_cu =
+        send_unsigned_tx(&mut svm, unwrap_sol_ix(agent_asset, vault_config, wallet)).unwrap();
+
+    let min_wallet_lamports = svm.get_balance(&wallet).unwrap();
+    let execute_cpi_noop_cu = send_unsigned_tx(
+        &mut svm,
+        execute_cpi_checked_noop_ix(agent_asset, vault_config, wallet, min_wallet_lamports),
+    )
+    .unwrap();
+    assert!(
+        execute_cpi_noop_cu <= 22_200,
+        "execute_cpi_checked noop baseline CU: {execute_cpi_noop_cu}"
+    );
+    let excess_lamports = svm.get_balance(&wallet).unwrap() - wallet_rent_floor;
+    send_unsigned_tx(
+        &mut svm,
+        withdraw_sol_ix(agent_asset, wallet, destination, excess_lamports),
+    )
+    .unwrap();
+    let close_wallet_cu = send_unsigned_tx(
+        &mut svm,
+        close_wallet_ix(agent_asset, vault_config, wallet, rent_receiver),
+    )
+    .unwrap();
+    let reopen_cu = send_unsigned_tx(
+        &mut svm,
+        reopen_wallet_for_recovery_ix(agent_asset, vault_config, wallet),
+    )
+    .unwrap();
+
+    println!("agent-vault devnet cost report");
+    println!("activation_fee_lamports={EXPECTED_ACTIVATION_FEE_LAMPORTS}");
+    println!("rent_global_config_160={}", rent_minimum(GLOBAL_CONFIG_LEN));
+    println!("rent_vault_config_24={}", rent_minimum(VAULT_CONFIG_LEN));
+    println!("rent_wallet_32={}", rent_minimum(WALLET_LEN));
+    println!("rent_token_account_165={}", token_account_rent());
+    println!("cu_init_vault_config={init_vault_cu}");
+    println!("cu_create_wallet={create_wallet_cu}");
+    println!("cu_create_wallet_second={create_wallet_1_cu}");
+    println!("cu_update_wallet_label={update_label_cu}");
+    println!("cu_deposit_sol={deposit_cu}");
+    println!("cu_withdraw_sol={withdraw_cu}");
+    println!("cu_transfer_sol={transfer_sol_cu}");
+    println!("cu_create_wallet_ata={create_ata_cu}");
+    println!("cu_transfer_spl={transfer_spl_cu}");
+    println!("cu_close_wallet_ata={close_ata_cu}");
+    println!("cu_wrap_sol={wrap_sol_cu}");
+    println!("cu_unwrap_sol={unwrap_sol_cu}");
+    println!("cu_execute_cpi_checked_noop_baseline={execute_cpi_noop_cu}");
+    println!("cu_close_wallet={close_wallet_cu}");
+    println!("cu_reopen_wallet_for_recovery={reopen_cu}");
+}
+
+#[test]
 fn update_wallet_label_persists_utf8_label() {
     let mut svm = runtime();
     initialize_global_config(&mut svm);
@@ -2507,7 +2808,7 @@ fn execute_cpi_checked_uses_redeemable_wsol_balance() {
 
     let agent_asset = Address::new_unique();
     let (vault_config, wallet) = create_agent_vault_and_wallet(&mut svm, agent_asset);
-    let native_reserve = 2_039_280;
+    let native_reserve = token_account_rent();
     let redeemable_lamports = 500;
     let wallet_wsol_ata = ata_address(&wallet, &NATIVE_MINT, &TOKEN_PROGRAM);
 
@@ -2715,7 +3016,7 @@ fn execute_cpi_checked_validates_token_custody_equals_and_ata_status() {
     svm.set_account(
         wallet_ata,
         Account {
-            lamports: 2_039_280,
+            lamports: token_account_rent(),
             data: vec![0u8; TOKEN_ACCOUNT_LEN - 1],
             owner: TOKEN_PROGRAM,
             ..Default::default()
@@ -2781,7 +3082,7 @@ fn execute_cpi_checked_rejects_malformed_token_balance_post_checks() {
     svm.set_account(
         short_token,
         Account {
-            lamports: 2_039_280,
+            lamports: token_account_rent(),
             data: vec![0u8; TOKEN_ACCOUNT_LEN - 1],
             owner: TOKEN_PROGRAM,
             ..Default::default()
@@ -3239,7 +3540,7 @@ fn wsol_wrap_and_unwrap_preserve_wallet_authority_and_rent() {
 
     let agent_asset = Address::new_unique();
     let (vault_config, wallet) = create_agent_vault_and_wallet(&mut svm, agent_asset);
-    let native_reserve = 2_039_280;
+    let native_reserve = token_account_rent();
     let wallet_wsol_ata = ata_address(&wallet, &NATIVE_MINT, &TOKEN_PROGRAM);
     install_token_account(
         &mut svm,
@@ -3291,7 +3592,7 @@ fn wsol_wrap_rejects_malformed_wallet_atas() {
     let (vault_config, wallet) = create_agent_vault_and_wallet(&mut svm, agent_asset);
     send_unsigned_tx(&mut svm, deposit_sol_ix(agent_asset, wallet, 1_000_000)).unwrap();
     let wallet_wsol_ata = ata_address(&wallet, &NATIVE_MINT, &TOKEN_PROGRAM);
-    let native_reserve = 2_039_280;
+    let native_reserve = token_account_rent();
 
     for data in [
         token_account_data(NATIVE_MINT, wallet, 0),
@@ -3333,7 +3634,7 @@ fn unwrap_sol_rejects_malformed_wsol_ata() {
     let agent_asset = Address::new_unique();
     let (vault_config, wallet) = create_agent_vault_and_wallet(&mut svm, agent_asset);
     let wallet_wsol_ata = ata_address(&wallet, &NATIVE_MINT, &TOKEN_PROGRAM);
-    let native_reserve = 2_039_280;
+    let native_reserve = token_account_rent();
 
     for data in [
         token_account_data(NATIVE_MINT, wallet, 0),
@@ -3498,7 +3799,7 @@ fn tokenkeg_ata_transfer_and_close_paths_work() {
     .unwrap();
     assert_eq!(
         svm.get_balance(&rent_receiver).unwrap(),
-        rent_receiver_before + 2_039_280
+        rent_receiver_before + token_account_rent()
     );
 }
 
@@ -3759,7 +4060,7 @@ fn close_wallet_ata_rejects_native_wsol_route() {
     let agent_asset = Address::new_unique();
     let (vault_config, wallet) = create_agent_vault_and_wallet(&mut svm, agent_asset);
     let wallet_wsol_ata = ata_address(&wallet, &NATIVE_MINT, &TOKEN_PROGRAM);
-    let native_reserve = 2_039_280;
+    let native_reserve = token_account_rent();
     svm.set_account(
         NATIVE_MINT,
         Account {
@@ -3882,7 +4183,7 @@ fn recovery_only_wallet_allows_constrained_cleanup_paths() {
     .unwrap();
     assert_eq!(svm.get_balance(&destination).unwrap(), 1_001);
 
-    let native_reserve = 2_039_280;
+    let native_reserve = token_account_rent();
     let wallet_wsol_ata = ata_address(&wallet, &NATIVE_MINT, &TOKEN_PROGRAM);
     svm.set_account(
         wallet_wsol_ata,

@@ -126,6 +126,7 @@ dependencies = [
  "solana-address 2.5.0",
  "solana-instruction",
  "solana-message",
+ "solana-rent",
  "solana-sha256-hasher",
  "solana-signature",
  "solana-transaction",

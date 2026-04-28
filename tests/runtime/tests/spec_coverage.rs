@@ -5,6 +5,13 @@ struct CoverageRow {
     formal_harnesses: &'static [&'static str],
 }
 
+const RUNTIME_TEST_SOURCE: &str = include_str!("global_config.rs");
+const KANI_HARNESS_SOURCE: &str =
+    include_str!("../../../programs/agent-vault/src/kani_harness.rs");
+const VERIFY_DEVNET_RELEASE_SCRIPT: &str =
+    include_str!("../../../scripts/verify-devnet-release.sh");
+const VERIFY_FORMAL_SCRIPT: &str = include_str!("../../../scripts/verify-formal.sh");
+
 const COVERAGE: &[CoverageRow] = &[
     CoverageRow {
         id: "identity.core-owner",
@@ -159,8 +166,28 @@ const COVERAGE: &[CoverageRow] = &[
     CoverageRow {
         id: "release.verification",
         requirement: "Release verification runs format, unit, runtime, formal, SBF, and manifest hash checks.",
-        runtime_tests: &["scripts/verify-devnet-release.sh"],
+        runtime_tests: &[
+            "scripts/verify-devnet-release.sh",
+            "devnet_release_cost_report",
+        ],
         formal_harnesses: &["scripts/verify-formal.sh"],
+    },
+    CoverageRow {
+        id: "performance.budgets",
+        requirement: "Runtime tests keep CU gates for routine V0 instructions and release verification.",
+        runtime_tests: &[
+            "init_create_deposit_and_withdraw_sol_flow",
+            "routine_v0_instructions_do_not_charge_protocol_fees",
+            "execute_cpi_checked_invokes_memo_with_only_wallet_meta",
+            "devnet_release_cost_report",
+        ],
+        formal_harnesses: &["v0_constants_match_spec_limits_and_tags"],
+    },
+    CoverageRow {
+        id: "rent.snapshots",
+        requirement: "Runtime tests snapshot active rent for global config, vault config, wallet, and token accounts.",
+        runtime_tests: &["rent_snapshots_match_active_rent"],
+        formal_harnesses: &["v0_constants_match_spec_limits_and_tags"],
     },
 ];
 
@@ -188,5 +215,40 @@ fn v0_spec_coverage_matrix_has_no_gaps() {
             "coverage row {} has no Kani/formal coverage",
             row.id
         );
+
+        for runtime_test in row.runtime_tests {
+            assert!(
+                runtime_item_exists(runtime_test),
+                "coverage row {} references missing runtime test or script {}",
+                row.id,
+                runtime_test
+            );
+        }
+
+        for harness in row.formal_harnesses {
+            assert!(
+                formal_item_exists(harness),
+                "coverage row {} references missing Kani harness or script {}",
+                row.id,
+                harness
+            );
+        }
     }
+}
+
+fn runtime_item_exists(name: &str) -> bool {
+    if name == "scripts/verify-devnet-release.sh" {
+        return VERIFY_DEVNET_RELEASE_SCRIPT.contains("verify-formal.sh")
+            && VERIFY_DEVNET_RELEASE_SCRIPT.contains("devnet_release_cost_report");
+    }
+
+    RUNTIME_TEST_SOURCE.contains(&format!("fn {name}("))
+}
+
+fn formal_item_exists(name: &str) -> bool {
+    if name == "scripts/verify-formal.sh" {
+        return VERIFY_FORMAL_SCRIPT.contains("cargo kani");
+    }
+
+    KANI_HARNESS_SOURCE.contains(&format!("fn {name}("))
 }
