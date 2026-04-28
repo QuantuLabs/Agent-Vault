@@ -77,6 +77,7 @@ release manifest.
 NO_DNA=1 cargo test --offline
 NO_DNA=1 cargo build-sbf
 NO_DNA=1 cargo test --offline --manifest-path tests/runtime/Cargo.toml
+NO_DNA=1 ./scripts/verify-formal.sh
 ```
 
 Full local release verification:
@@ -86,7 +87,8 @@ NO_DNA=1 ./scripts/verify-devnet-release.sh
 ```
 
 The verification script runs formatting, unit tests, SBF build, SBF stack-log
-checks, LiteSVM runtime tests, and release artifact hash/size checks.
+checks, LiteSVM runtime tests, Kani harnesses, and release artifact hash/size
+checks.
 
 ## Repository Layout
 

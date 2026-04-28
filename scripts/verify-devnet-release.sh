@@ -16,6 +16,7 @@ if grep -E "Stack offset|overwrites values in the frame" "$BUILD_LOG" >/dev/null
 fi
 
 cargo test --offline --manifest-path tests/runtime/Cargo.toml
+NO_DNA=1 ./scripts/verify-formal.sh
 
 node <<'NODE'
 const crypto = require('crypto');
