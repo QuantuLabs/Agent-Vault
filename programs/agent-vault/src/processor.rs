@@ -8,7 +8,10 @@ use crate::{
         TOKEN_PROGRAM_ID, WALLET_FLAG_ACTIVE, WALLET_FLAG_RECOVERY_ONLY,
     },
     core_asset::assert_core_asset_owner_and_collection,
-    cpi_plan::{validate_execute_cpi_plan, CpiAccountMeta, ProtectedAccounts},
+    cpi_plan::{
+        validate_execute_cpi_plan, validate_execute_cpi_post_check_indexes, CpiAccountMeta,
+        ProtectedAccounts,
+    },
     error::AgentVaultError,
     instruction::{
         parse_instruction, CreateWallet, CreateWalletAta, DepositSol, IndexedWallet, Instruction,
@@ -18,12 +21,12 @@ use crate::{
     pda::{
         agent_wallet_index_seed, derive_agent_wallet, derive_associated_token_account,
         derive_global_config, derive_registry_agent_account, derive_vault_config,
-        validate_agent_wallet_pda,
+        validate_agent_wallet_pda, validate_global_config_pda, validate_vault_config_pda,
     },
     state::{
         pack_global_config, pack_vault_config, pack_wallet, unpack_global_config,
         unpack_vault_config, unpack_wallet, AgentWallet, GlobalConfig, VaultConfig,
-        GLOBAL_CONFIG_LEN, PUBKEY_LEN, VAULT_CONFIG_LEN, WALLET_LEN,
+        GLOBAL_CONFIG_LEN, PUBKEY_LEN, VAULT_CONFIG_LEN, WALLET_LABEL_OFFSET, WALLET_LEN,
     },
     token_state::{parse_mint, parse_token_account_for_mint, TokenAccount, TokenMint},
     validation::{
@@ -289,13 +292,13 @@ fn process_update_wallet_label(
     let global = load_global_config(program_id, global_config_account)?;
     assert_core_asset_owner_and_collection(holder, agent_asset, &global.collection)?;
     let _vault = load_vault_config(program_id, vault_config_account, agent_asset.address())?;
-    let mut wallet = load_wallet(program_id, wallet_account, agent_asset.address())?;
+    let wallet = load_wallet(program_id, wallet_account, agent_asset.address())?;
     if !wallet.is_active() || wallet.index != ix.index {
         return Err(AgentVaultError::InvalidWallet.into());
     }
-    wallet.label = ix.label;
     let mut data = wallet_account.try_borrow_mut()?;
-    pack_wallet(&wallet, &mut data)
+    data[WALLET_LABEL_OFFSET..WALLET_LABEL_OFFSET + ix.label.len()].copy_from_slice(&ix.label);
+    Ok(())
 }
 
 #[inline(never)]
@@ -858,6 +861,27 @@ fn process_execute_cpi_checked(
         return Err(AgentVaultError::InvalidCpiAccounts.into());
     }
 
+    let wallet_key = address_bytes(wallet_account.address());
+
+    if ix.target_account_count == 0 {
+        validate_execute_cpi_post_check_indexes(ix, &[], &wallet_key)?;
+        let final_views = [wallet_account];
+        let final_metas = [InstructionAccount::readonly_signer(
+            wallet_account.address(),
+        )];
+        return execute_checked_cpi_with_final_accounts(
+            program_id,
+            ix,
+            wallet_account,
+            &wallet_key,
+            agent_asset.address(),
+            target_program,
+            &wallet,
+            &final_views,
+            &final_metas,
+        );
+    }
+
     let remaining_metas = build_cpi_plan_metas(remaining_accounts)?;
     let protected = ProtectedAccounts {
         holder: address_bytes(holder.address()),
@@ -866,12 +890,7 @@ fn process_execute_cpi_checked(
         agent_asset: address_bytes(agent_asset.address()),
         target_program: address_bytes(target_program.address()),
     };
-    validate_execute_cpi_plan(
-        ix,
-        &remaining_metas,
-        &protected,
-        &address_bytes(wallet_account.address()),
-    )?;
+    validate_execute_cpi_plan(ix, &remaining_metas, &protected, &wallet_key)?;
 
     let final_count = ix.target_account_count as usize + 1;
     let mut final_views: Vec<&AccountView> = Vec::new();
@@ -889,43 +908,52 @@ fn process_execute_cpi_checked(
         &mut final_views,
         &mut final_metas,
     )?;
+    execute_checked_cpi_with_final_accounts(
+        program_id,
+        ix,
+        wallet_account,
+        &wallet_key,
+        agent_asset.address(),
+        target_program,
+        &wallet,
+        &final_views[..final_count],
+        &final_metas[..final_count],
+    )
+}
 
+fn execute_checked_cpi_with_final_accounts<'a>(
+    program_id: &Address,
+    ix: &crate::instruction::ExecuteCpiChecked<'_>,
+    wallet_account: &'a AccountView,
+    wallet_key: &[u8; PUBKEY_LEN],
+    agent_asset: &Address,
+    target_program: &'a AccountView,
+    wallet: &AgentWallet,
+    final_views: &[&'a AccountView],
+    final_metas: &[InstructionAccount<'a>],
+) -> ProgramResult {
     let mut pre_values = [0u64; crate::constants::MAX_POST_CHECKS as usize];
     let mut custody_snapshots =
         [CustodySnapshot::EMPTY; crate::constants::MAX_POST_CHECKS as usize];
-    snapshot_post_checks(
-        ix,
-        &final_views[..final_count],
-        &mut pre_values,
-        &mut custody_snapshots,
-    )?;
-    enforce_wallet_controlled_token_checks(
-        ix,
-        &final_views[..final_count],
-        &final_metas[..final_count],
-        &address_bytes(wallet_account.address()),
-    )?;
-    enforce_writable_non_token_owner_checks(
-        ix,
-        &final_views[..final_count],
-        &final_metas[..final_count],
-    )?;
+    snapshot_post_checks(ix, final_views, &mut pre_values, &mut custody_snapshots)?;
+    enforce_wallet_controlled_token_checks(ix, final_views, final_metas, wallet_key)?;
+    enforce_writable_non_token_owner_checks(ix, final_views, final_metas)?;
 
     let index_seed = agent_wallet_index_seed(wallet.index);
     let bump_seed = [wallet.bump];
     let seeds = [
         Seed::from(SEED_AGENT_WALLET),
-        Seed::from(agent_asset.address().as_ref()),
+        Seed::from(agent_asset.as_ref()),
         Seed::from(&index_seed),
         Seed::from(&bump_seed),
     ];
     let signer = Signer::from(&seeds);
     let instruction = InstructionView {
         program_id: target_program.address(),
-        accounts: &final_metas[..final_count],
+        accounts: final_metas,
         data: ix.target_ix_data,
     };
-    invoke_signed_with_slice(&instruction, &final_views[..final_count], &[signer])?;
+    invoke_signed_with_slice(&instruction, final_views, &[signer])?;
 
     assert_owned_by(wallet_account, program_id)?;
     if wallet_account.data_len() != WALLET_LEN {
@@ -935,18 +963,8 @@ fn process_execute_cpi_checked(
     if wallet_account.lamports() < rent_floor {
         return Err(AgentVaultError::RentFloorViolation.into());
     }
-    enforce_wallet_controlled_token_checks(
-        ix,
-        &final_views[..final_count],
-        &final_metas[..final_count],
-        &address_bytes(wallet_account.address()),
-    )?;
-    evaluate_post_checks(
-        ix,
-        &final_views[..final_count],
-        &pre_values,
-        &custody_snapshots,
-    )
+    enforce_wallet_controlled_token_checks(ix, final_views, final_metas, wallet_key)?;
+    evaluate_post_checks(ix, final_views, &pre_values, &custody_snapshots)
 }
 
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -1175,13 +1193,18 @@ fn enforce_wallet_controlled_token_checks(
     wallet_key: &[u8; PUBKEY_LEN],
 ) -> ProgramResult {
     let mut i = 0usize;
+    let mut coverage = WalletTokenPostCheckCoverage::EMPTY;
+    let mut coverage_loaded = false;
     while i < final_accounts.len() {
         if final_metas[i].is_writable {
             if let Some((mint, kind)) = read_wallet_controlled_token(final_accounts[i], wallet_key)?
             {
                 let token_index = i as u8;
-                let (has_economic, has_custody) = post_checks_cover_wallet_token(ix, token_index)?;
-                if !has_economic || !has_custody {
+                if !coverage_loaded {
+                    coverage = wallet_token_post_check_coverage(ix)?;
+                    coverage_loaded = true;
+                }
+                if !coverage.has_economic(token_index) || !coverage.has_custody(token_index) {
                     return Err(AgentVaultError::MissingCustodyPostCheck.into());
                 }
                 let expected_ata = derive_associated_token_account(
@@ -1197,6 +1220,70 @@ fn enforce_wallet_controlled_token_checks(
         i += 1;
     }
     Ok(())
+}
+
+#[derive(Clone, Copy)]
+struct WalletTokenPostCheckCoverage {
+    economic_mask: u128,
+    custody_mask: u128,
+}
+
+impl WalletTokenPostCheckCoverage {
+    const EMPTY: Self = Self {
+        economic_mask: 0,
+        custody_mask: 0,
+    };
+
+    #[inline(always)]
+    fn has_economic(&self, token_index: u8) -> bool {
+        self.economic_mask & account_index_mask(token_index) != 0
+    }
+
+    #[inline(always)]
+    fn has_custody(&self, token_index: u8) -> bool {
+        self.custody_mask & account_index_mask(token_index) != 0
+    }
+}
+
+fn wallet_token_post_check_coverage(
+    ix: &crate::instruction::ExecuteCpiChecked<'_>,
+) -> Result<WalletTokenPostCheckCoverage, ProgramError> {
+    let mut coverage = WalletTokenPostCheckCoverage::EMPTY;
+    let mut checks = ix.post_checks();
+    while let Some(check) = checks.next_check()? {
+        match check {
+            PostCheck::TokenBalanceMin {
+                token_account_index,
+                ..
+            }
+            | PostCheck::TokenBalanceMax {
+                token_account_index,
+                ..
+            }
+            | PostCheck::TokenIncreaseMin {
+                token_account_index,
+                ..
+            }
+            | PostCheck::TokenDecreaseMax {
+                token_account_index,
+                ..
+            } => {
+                coverage.economic_mask |= account_index_mask(token_account_index);
+            }
+            PostCheck::TokenCustodyUnchanged {
+                token_account_index,
+                ..
+            }
+            | PostCheck::TokenCustodyEquals {
+                token_account_index,
+                ..
+            } => {
+                coverage.custody_mask |= account_index_mask(token_account_index);
+            }
+            _ => {}
+        }
+    }
+    Ok(coverage)
 }
 
 fn enforce_writable_non_token_owner_checks(
@@ -1240,53 +1327,6 @@ fn read_wallet_controlled_token(
     }
 }
 
-fn post_checks_cover_wallet_token(
-    ix: &crate::instruction::ExecuteCpiChecked<'_>,
-    token_index: u8,
-) -> Result<(bool, bool), ProgramError> {
-    let mut checks = ix.post_checks();
-    let mut has_economic = false;
-    let mut has_custody = false;
-    while let Some(check) = checks.next_check()? {
-        match check {
-            PostCheck::TokenBalanceMin {
-                token_account_index,
-                ..
-            }
-            | PostCheck::TokenBalanceMax {
-                token_account_index,
-                ..
-            }
-            | PostCheck::TokenIncreaseMin {
-                token_account_index,
-                ..
-            }
-            | PostCheck::TokenDecreaseMax {
-                token_account_index,
-                ..
-            } => {
-                if token_account_index == token_index {
-                    has_economic = true;
-                }
-            }
-            PostCheck::TokenCustodyUnchanged {
-                token_account_index,
-                ..
-            }
-            | PostCheck::TokenCustodyEquals {
-                token_account_index,
-                ..
-            } => {
-                if token_account_index == token_index {
-                    has_custody = true;
-                }
-            }
-            _ => {}
-        }
-    }
-    Ok((has_economic, has_custody))
-}
-
 fn post_checks_cover_account_state(
     ix: &crate::instruction::ExecuteCpiChecked<'_>,
     account_index: u8,
@@ -1306,6 +1346,11 @@ fn post_checks_cover_account_state(
         }
     }
     Ok(false)
+}
+
+#[inline(always)]
+fn account_index_mask(index: u8) -> u128 {
+    1u128 << (index as u32)
 }
 
 fn snapshot_post_checks(
@@ -1817,15 +1862,9 @@ fn load_global_config(
     account: &AccountView,
 ) -> Result<GlobalConfig, ProgramError> {
     assert_owned_by(account, program_id)?;
-    let pda = derive_global_config(program_id)?;
-    if account.address() != &pda.address {
-        return Err(AgentVaultError::InvalidPda.into());
-    }
     let data = account.try_borrow()?;
     let config = unpack_global_config(&data)?;
-    if config.bump != pda.bump {
-        return Err(AgentVaultError::InvalidBump.into());
-    }
+    validate_global_config_pda(account.address(), config.bump, program_id)?;
     Ok(config)
 }
 
@@ -1835,15 +1874,9 @@ fn load_vault_config(
     agent_asset: &Address,
 ) -> Result<VaultConfig, ProgramError> {
     assert_owned_by(account, program_id)?;
-    let pda = derive_vault_config(program_id, agent_asset)?;
-    if account.address() != &pda.address {
-        return Err(AgentVaultError::InvalidPda.into());
-    }
     let data = account.try_borrow()?;
     let config = unpack_vault_config(&data)?;
-    if config.bump != pda.bump {
-        return Err(AgentVaultError::InvalidBump.into());
-    }
+    validate_vault_config_pda(account.address(), config.bump, program_id, agent_asset)?;
     Ok(config)
 }
 

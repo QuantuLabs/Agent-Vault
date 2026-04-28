@@ -69,7 +69,13 @@ pub fn validate_global_config_pda(
     stored_bump: u8,
     program_id: &Address,
 ) -> Result<(), ProgramError> {
-    validate_pda(address, stored_bump, &derive_global_config(program_id)?)
+    let bump_seed = [stored_bump];
+    validate_bumped_pda(
+        address,
+        &[SEED_GLOBAL_CONFIG, &bump_seed],
+        &[SEED_GLOBAL_CONFIG],
+        program_id,
+    )
 }
 
 pub fn validate_vault_config_pda(
@@ -78,10 +84,12 @@ pub fn validate_vault_config_pda(
     program_id: &Address,
     agent_asset: &Address,
 ) -> Result<(), ProgramError> {
-    validate_pda(
+    let bump_seed = [stored_bump];
+    validate_bumped_pda(
         address,
-        stored_bump,
-        &derive_vault_config(program_id, agent_asset)?,
+        &[SEED_VAULT_CONFIG, agent_asset.as_ref(), &bump_seed],
+        &[SEED_VAULT_CONFIG, agent_asset.as_ref()],
+        program_id,
     )
 }
 
@@ -92,10 +100,18 @@ pub fn validate_agent_wallet_pda(
     agent_asset: &Address,
     index: u16,
 ) -> Result<(), ProgramError> {
-    validate_pda(
+    let index_seed = agent_wallet_index_seed(index);
+    let bump_seed = [stored_bump];
+    validate_bumped_pda(
         address,
-        stored_bump,
-        &derive_agent_wallet(program_id, agent_asset, index)?,
+        &[
+            SEED_AGENT_WALLET,
+            agent_asset.as_ref(),
+            &index_seed,
+            &bump_seed,
+        ],
+        &[SEED_AGENT_WALLET, agent_asset.as_ref(), &index_seed],
+        program_id,
     )
 }
 
@@ -135,15 +151,24 @@ pub fn assert_agent_wallet_pda(
     )
 }
 
-#[inline(always)]
-fn validate_pda(address: &Address, stored_bump: u8, expected: &Pda) -> Result<(), ProgramError> {
-    if address != &expected.address {
-        return Err(AgentVaultError::InvalidPda.into());
+fn validate_bumped_pda(
+    address: &Address,
+    bumped_seeds: &[&[u8]],
+    canonical_seeds: &[&[u8]],
+    program_id: &Address,
+) -> Result<(), ProgramError> {
+    if let Ok(created) = create_pda(bumped_seeds, program_id) {
+        if address == &created {
+            return Ok(());
+        }
     }
-    if stored_bump != expected.bump {
-        return Err(AgentVaultError::InvalidBump.into());
+
+    let expected = derive_pda(canonical_seeds, program_id)?;
+    if address == &expected.address {
+        Err(AgentVaultError::InvalidBump.into())
+    } else {
+        Err(AgentVaultError::InvalidPda.into())
     }
-    Ok(())
 }
 
 #[inline(always)]
@@ -151,6 +176,18 @@ fn derive_pda(seeds: &[&[u8]], program_id: &Address) -> Result<Pda, ProgramError
     let (address, bump) =
         find_program_address(seeds, program_id).ok_or(AgentVaultError::InvalidPda)?;
     Ok(Pda { address, bump })
+}
+
+#[cfg(any(target_os = "solana", target_arch = "bpf"))]
+#[inline(always)]
+fn create_pda(seeds: &[&[u8]], program_id: &Address) -> Result<Address, ProgramError> {
+    Address::create_program_address(seeds, program_id).map_err(|_| ProgramError::InvalidSeeds)
+}
+
+#[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
+#[inline(always)]
+fn create_pda(seeds: &[&[u8]], program_id: &Address) -> Result<Address, ProgramError> {
+    host_pda::create_program_address(seeds, program_id)
 }
 
 #[cfg(any(target_os = "solana", target_arch = "bpf"))]
@@ -167,7 +204,7 @@ fn find_program_address(seeds: &[&[u8]], program_id: &Address) -> Option<(Addres
 
 #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
 mod host_pda {
-    use pinocchio::Address;
+    use pinocchio::{error::ProgramError, Address};
 
     const PDA_MARKER: &[u8; 21] = b"ProgramDerivedAddress";
     const MAX_SEEDS: usize = 16;
@@ -197,6 +234,29 @@ mod host_pda {
                 return None;
             }
             bump -= 1;
+        }
+    }
+
+    pub fn create_program_address(
+        seeds: &[&[u8]],
+        program_id: &Address,
+    ) -> Result<Address, ProgramError> {
+        if seeds.len() > MAX_SEEDS || seeds.iter().any(|seed| seed.len() > MAX_SEED_LEN) {
+            return Err(ProgramError::MaxSeedLengthExceeded);
+        }
+
+        let mut hasher = Sha256::new();
+        for seed in seeds {
+            hasher.update(seed);
+        }
+        hasher.update(program_id.as_ref());
+        hasher.update(PDA_MARKER);
+        let bytes = hasher.finalize();
+
+        if ed25519::is_on_curve(&bytes) {
+            Err(ProgramError::InvalidSeeds)
+        } else {
+            Ok(Address::new_from_array(bytes))
         }
     }
 

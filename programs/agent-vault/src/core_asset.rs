@@ -1,5 +1,5 @@
 use crate::{constants::METAPLEX_CORE_PROGRAM_ID, error::AgentVaultError, state::PUBKEY_LEN};
-use pinocchio::{error::ProgramError, AccountView, Address};
+use pinocchio::{error::ProgramError, AccountView};
 
 pub const CORE_ASSET_MIN_LEN: usize = 66;
 pub const CORE_ASSET_KEY_OFFSET: usize = 0;
@@ -49,21 +49,27 @@ pub fn assert_core_asset_owner_and_collection(
     agent_asset: &AccountView,
     expected_collection: &[u8; PUBKEY_LEN],
 ) -> Result<(), ProgramError> {
-    let asset = read_core_asset(agent_asset)?;
-    if asset.owner != address_bytes(holder.address()) {
+    if !agent_asset.owned_by(&METAPLEX_CORE_PROGRAM_ID) {
+        return Err(AgentVaultError::InvalidCoreAsset.into());
+    }
+    let data = agent_asset.try_borrow()?;
+    if data.len() < CORE_ASSET_MIN_LEN || data[CORE_ASSET_KEY_OFFSET] != CORE_ASSET_V1_KEY {
+        return Err(AgentVaultError::InvalidCoreAsset.into());
+    }
+    if data[CORE_ASSET_COLLECTION_TAG_OFFSET] != CORE_ASSET_COLLECTION_TAG {
+        return Err(AgentVaultError::InvalidCollection.into());
+    }
+    if &data[CORE_ASSET_OWNER_OFFSET..CORE_ASSET_OWNER_OFFSET + PUBKEY_LEN]
+        != holder.address().as_ref()
+    {
         return Err(AgentVaultError::InvalidHolder.into());
     }
-    if &asset.collection != expected_collection {
+    if &data[CORE_ASSET_COLLECTION_OFFSET..CORE_ASSET_COLLECTION_OFFSET + PUBKEY_LEN]
+        != &expected_collection[..]
+    {
         return Err(AgentVaultError::InvalidCollection.into());
     }
     Ok(())
-}
-
-#[inline(always)]
-fn address_bytes(address: &Address) -> [u8; PUBKEY_LEN] {
-    let mut out = [0u8; PUBKEY_LEN];
-    out.copy_from_slice(address.as_ref());
-    out
 }
 
 #[cfg(test)]

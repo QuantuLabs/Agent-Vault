@@ -1664,7 +1664,7 @@ fn routine_v0_instructions_do_not_charge_protocol_fees() {
         create_wallet_ix(agent_asset, vault_config, wallet),
     )
     .unwrap();
-    assert!(create_wallet_cu <= 18_000, "create_wallet CU: {create_wallet_cu}");
+    assert!(create_wallet_cu <= 17_500, "create_wallet CU: {create_wallet_cu}");
     let wallet_rent_floor = svm.get_balance(&wallet).unwrap();
     assert_no_fee(&svm);
 
@@ -1675,7 +1675,7 @@ fn routine_v0_instructions_do_not_charge_protocol_fees() {
     )
     .unwrap();
     assert!(
-        create_wallet_1_cu <= 18_000,
+        create_wallet_1_cu <= 17_500,
         "create_wallet second CU: {create_wallet_1_cu}"
     );
     assert_no_fee(&svm);
@@ -1686,14 +1686,14 @@ fn routine_v0_instructions_do_not_charge_protocol_fees() {
     )
     .unwrap();
     assert!(
-        update_label_cu <= 17_600,
+        update_label_cu <= 8_000,
         "update_wallet_label CU: {update_label_cu}"
     );
     assert_no_fee(&svm);
 
     let deposit_cu =
         send_unsigned_tx(&mut svm, deposit_sol_ix(agent_asset, wallet, 1_000_000)).unwrap();
-    assert!(deposit_cu <= 10_700, "deposit_sol CU: {deposit_cu}");
+    assert!(deposit_cu <= 5_000, "deposit_sol CU: {deposit_cu}");
     assert_no_fee(&svm);
 
     let destination = Address::new_unique();
@@ -1703,7 +1703,7 @@ fn routine_v0_instructions_do_not_charge_protocol_fees() {
         withdraw_sol_ix(agent_asset, wallet, destination, 100_000),
     )
     .unwrap();
-    assert!(withdraw_cu <= 9_700, "withdraw_sol CU: {withdraw_cu}");
+    assert!(withdraw_cu <= 5_000, "withdraw_sol CU: {withdraw_cu}");
     assert_no_fee(&svm);
 
     let transfer_sol_cu = send_unsigned_tx(
@@ -1712,7 +1712,7 @@ fn routine_v0_instructions_do_not_charge_protocol_fees() {
     )
     .unwrap();
     assert!(
-        transfer_sol_cu <= 15_000,
+        transfer_sol_cu <= 7_000,
         "transfer_sol CU: {transfer_sol_cu}"
     );
     assert_no_fee(&svm);
@@ -1725,7 +1725,7 @@ fn routine_v0_instructions_do_not_charge_protocol_fees() {
     )
     .unwrap();
     assert!(
-        create_ata_cu <= 48_000,
+        create_ata_cu <= 38_000,
         "create_wallet_ata CU: {create_ata_cu}"
     );
     assert_no_fee(&svm);
@@ -1761,7 +1761,7 @@ fn routine_v0_instructions_do_not_charge_protocol_fees() {
     )
     .unwrap();
     assert!(
-        transfer_spl_cu <= 31_500,
+        transfer_spl_cu <= 22_000,
         "transfer_spl CU: {transfer_spl_cu}"
     );
     assert_no_fee(&svm);
@@ -1781,7 +1781,7 @@ fn routine_v0_instructions_do_not_charge_protocol_fees() {
     )
     .unwrap();
     assert!(
-        close_ata_cu <= 27_000,
+        close_ata_cu <= 18_000,
         "close_wallet_ata CU: {close_ata_cu}"
     );
     assert_no_fee(&svm);
@@ -1803,13 +1803,13 @@ fn routine_v0_instructions_do_not_charge_protocol_fees() {
         wrap_sol_ix(agent_asset, vault_config, wallet, wallet_wsol_ata, 250_000),
     )
     .unwrap();
-    assert!(wrap_sol_cu <= 21_600, "wrap_sol CU: {wrap_sol_cu}");
+    assert!(wrap_sol_cu <= 13_000, "wrap_sol CU: {wrap_sol_cu}");
     assert_no_fee(&svm);
 
     send_unsigned_tx(&mut svm, sync_native_ix(wallet_wsol_ata)).unwrap();
     let unwrap_sol_cu =
         send_unsigned_tx(&mut svm, unwrap_sol_ix(agent_asset, vault_config, wallet)).unwrap();
-    assert!(unwrap_sol_cu <= 26_200, "unwrap_sol CU: {unwrap_sol_cu}");
+    assert!(unwrap_sol_cu <= 17_000, "unwrap_sol CU: {unwrap_sol_cu}");
     assert_no_fee(&svm);
 
     let current_wallet_balance = svm.get_balance(&wallet).unwrap();
@@ -1819,7 +1819,7 @@ fn routine_v0_instructions_do_not_charge_protocol_fees() {
     )
     .unwrap();
     assert!(
-        execute_cpi_cu <= 50_000,
+        execute_cpi_cu <= 32_000,
         "execute_cpi_checked memo CU: {execute_cpi_cu}"
     );
     assert_no_fee(&svm);
@@ -1838,7 +1838,7 @@ fn routine_v0_instructions_do_not_charge_protocol_fees() {
     )
     .unwrap();
     assert!(
-        close_wallet_cu <= 17_400,
+        close_wallet_cu <= 9_000,
         "close_wallet CU: {close_wallet_cu}"
     );
     assert_no_fee(&svm);
@@ -1849,7 +1849,7 @@ fn routine_v0_instructions_do_not_charge_protocol_fees() {
     )
     .unwrap();
     assert!(
-        reopen_cu <= 19_600,
+        reopen_cu <= 18_500,
         "reopen_wallet_for_recovery CU: {reopen_cu}"
     );
     assert_no_fee(&svm);
@@ -2483,15 +2483,107 @@ fn devnet_release_cost_report() {
         send_unsigned_tx(&mut svm, unwrap_sol_ix(agent_asset, vault_config, wallet)).unwrap();
 
     let min_wallet_lamports = svm.get_balance(&wallet).unwrap();
+    let execute_cpi_memo_cu = send_unsigned_tx(
+        &mut svm,
+        execute_cpi_checked_memo_ix(agent_asset, vault_config, wallet, min_wallet_lamports),
+    )
+    .unwrap();
+    assert!(
+        execute_cpi_memo_cu <= 32_000,
+        "execute_cpi_checked memo CU: {execute_cpi_memo_cu}"
+    );
+
+    let min_wallet_lamports = svm.get_balance(&wallet).unwrap();
     let execute_cpi_noop_cu = send_unsigned_tx(
         &mut svm,
         execute_cpi_checked_noop_ix(agent_asset, vault_config, wallet, min_wallet_lamports),
     )
     .unwrap();
     assert!(
-        execute_cpi_noop_cu <= 22_200,
+        execute_cpi_noop_cu <= 12_000,
         "execute_cpi_checked noop baseline CU: {execute_cpi_noop_cu}"
     );
+
+    let input_mint = Address::new_unique();
+    let output_mint = Address::new_unique();
+    install_mint(&mut svm, input_mint, TOKEN_PROGRAM, 6);
+    install_mint(&mut svm, output_mint, TOKEN_PROGRAM, 6);
+    let user_input = ata_address(&wallet, &input_mint, &TOKEN_PROGRAM);
+    let pool_input = Address::new_unique();
+    let pool_output = ata_address(&wallet, &output_mint, &TOKEN_PROGRAM);
+    let user_output = Address::new_unique();
+    install_token_account(
+        &mut svm,
+        user_input,
+        TOKEN_PROGRAM,
+        token_account_data(input_mint, wallet, 100),
+    );
+    install_token_account(
+        &mut svm,
+        pool_input,
+        TOKEN_PROGRAM,
+        token_account_data(input_mint, Address::new_unique(), 0),
+    );
+    install_token_account(
+        &mut svm,
+        pool_output,
+        TOKEN_PROGRAM,
+        token_account_data(output_mint, wallet, 40),
+    );
+    install_token_account(
+        &mut svm,
+        user_output,
+        TOKEN_PROGRAM,
+        token_account_data(output_mint, Address::new_unique(), 0),
+    );
+    let execute_cpi_mock_swap_cu = send_unsigned_tx(
+        &mut svm,
+        execute_cpi_checked_mock_swap_ix(
+            agent_asset,
+            vault_config,
+            wallet,
+            input_mint,
+            output_mint,
+            user_input,
+            pool_input,
+            pool_output,
+            user_output,
+            100,
+            100,
+            40,
+            40,
+        ),
+    )
+    .unwrap();
+    assert!(
+        execute_cpi_mock_swap_cu <= 75_000,
+        "execute_cpi_checked mock swap CU: {execute_cpi_mock_swap_cu}"
+    );
+    send_unsigned_tx(
+        &mut svm,
+        close_wallet_ata_ix(
+            agent_asset,
+            vault_config,
+            wallet,
+            input_mint,
+            TOKEN_PROGRAM,
+            rent_receiver,
+        ),
+    )
+    .unwrap();
+    send_unsigned_tx(
+        &mut svm,
+        close_wallet_ata_ix(
+            agent_asset,
+            vault_config,
+            wallet,
+            output_mint,
+            TOKEN_PROGRAM,
+            rent_receiver,
+        ),
+    )
+    .unwrap();
+
     let excess_lamports = svm.get_balance(&wallet).unwrap() - wallet_rent_floor;
     send_unsigned_tx(
         &mut svm,
@@ -2527,7 +2619,9 @@ fn devnet_release_cost_report() {
     println!("cu_close_wallet_ata={close_ata_cu}");
     println!("cu_wrap_sol={wrap_sol_cu}");
     println!("cu_unwrap_sol={unwrap_sol_cu}");
+    println!("cu_execute_cpi_checked_memo={execute_cpi_memo_cu}");
     println!("cu_execute_cpi_checked_noop_baseline={execute_cpi_noop_cu}");
+    println!("cu_execute_cpi_checked_mock_swap={execute_cpi_mock_swap_cu}");
     println!("cu_close_wallet={close_wallet_cu}");
     println!("cu_reopen_wallet_for_recovery={reopen_cu}");
 }

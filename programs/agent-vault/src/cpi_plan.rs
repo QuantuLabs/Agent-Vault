@@ -66,7 +66,7 @@ pub fn validate_execute_cpi_plan(
     validate_remaining_account_count(ix.target_account_count, target_remaining_accounts.len())?;
     validate_wallet_meta_index(ix.wallet_meta_index, ix.target_account_count)?;
     validate_duplicate_policy(target_remaining_accounts, protected_accounts, wallet_key)?;
-    validate_execute_cpi_post_check_indexes(ix, target_remaining_accounts, wallet_key)?;
+    validate_execute_cpi_post_check_indexes_unchecked(ix, target_remaining_accounts, wallet_key)?;
     Ok(())
 }
 
@@ -173,6 +173,14 @@ pub fn validate_execute_cpi_post_check_indexes(
 ) -> Result<(), ProgramError> {
     validate_remaining_account_count(ix.target_account_count, target_remaining_accounts.len())?;
     validate_wallet_meta_index(ix.wallet_meta_index, ix.target_account_count)?;
+    validate_execute_cpi_post_check_indexes_unchecked(ix, target_remaining_accounts, wallet_key)
+}
+
+fn validate_execute_cpi_post_check_indexes_unchecked(
+    ix: &ExecuteCpiChecked<'_>,
+    target_remaining_accounts: &[CpiAccountMeta],
+    wallet_key: &AccountKey,
+) -> Result<(), ProgramError> {
     if ix.post_check_count == 0 || ix.post_check_count > MAX_POST_CHECKS {
         return Err(AgentVaultError::InvalidPostCheck.into());
     }
@@ -181,7 +189,7 @@ pub fn validate_execute_cpi_post_check_indexes(
     let mut post_checks = ix.post_checks();
     while let Some(check) = post_checks.next_check()? {
         has_economic_bound |= is_economic_balance_bound(&check);
-        validate_post_check_account_indexes(
+        validate_post_check_account_indexes_unchecked(
             &check,
             ix.wallet_meta_index,
             ix.target_account_count,
@@ -205,20 +213,37 @@ pub fn validate_post_check_account_indexes(
 ) -> Result<(), ProgramError> {
     validate_remaining_account_count(target_account_count, target_remaining_accounts.len())?;
     validate_wallet_meta_index(wallet_meta_index, target_account_count)?;
+    validate_post_check_account_indexes_unchecked(
+        check,
+        wallet_meta_index,
+        target_account_count,
+        target_remaining_accounts,
+        wallet_key,
+    )
+}
 
+fn validate_post_check_account_indexes_unchecked(
+    check: &PostCheck,
+    wallet_meta_index: u8,
+    target_account_count: u8,
+    target_remaining_accounts: &[CpiAccountMeta],
+    wallet_key: &AccountKey,
+) -> Result<(), ProgramError> {
     match check {
         PostCheck::SolBalanceMin { account_index, .. }
         | PostCheck::SolBalanceMax { account_index, .. }
         | PostCheck::SolIncreaseMin { account_index, .. }
         | PostCheck::SolDecreaseMax { account_index, .. }
         | PostCheck::AccountOwnerEquals { account_index, .. }
-        | PostCheck::AccountStateEquals { account_index, .. } => validate_post_check_index(
-            *account_index,
-            wallet_meta_index,
-            target_account_count,
-            target_remaining_accounts,
-            wallet_key,
-        ),
+        | PostCheck::AccountStateEquals { account_index, .. } => {
+            validate_post_check_index_unchecked(
+                *account_index,
+                wallet_meta_index,
+                target_account_count,
+                target_remaining_accounts,
+                wallet_key,
+            )
+        }
         PostCheck::TokenBalanceMin {
             token_account_index,
             mint_account_index,
@@ -248,14 +273,14 @@ pub fn validate_post_check_account_indexes(
             mint_account_index,
             ..
         } => {
-            validate_post_check_index(
+            validate_post_check_index_unchecked(
                 *token_account_index,
                 wallet_meta_index,
                 target_account_count,
                 target_remaining_accounts,
                 wallet_key,
             )?;
-            validate_post_check_index(
+            validate_post_check_index_unchecked(
                 *mint_account_index,
                 wallet_meta_index,
                 target_account_count,
@@ -266,7 +291,7 @@ pub fn validate_post_check_account_indexes(
         PostCheck::TokenAuthorityEquals {
             token_account_index,
             ..
-        } => validate_post_check_index(
+        } => validate_post_check_index_unchecked(
             *token_account_index,
             wallet_meta_index,
             target_account_count,
@@ -281,14 +306,14 @@ pub fn is_economic_balance_bound(check: &PostCheck) -> bool {
     check.is_economic_balance_bound()
 }
 
-fn validate_post_check_index(
+fn validate_post_check_index_unchecked(
     final_account_index: u8,
     wallet_meta_index: u8,
     target_account_count: u8,
     target_remaining_accounts: &[CpiAccountMeta],
     wallet_key: &AccountKey,
 ) -> Result<(), ProgramError> {
-    let checked_key = final_account_key_at(
+    let checked_key = final_account_key_at_unchecked(
         final_account_index,
         wallet_meta_index,
         target_account_count,
@@ -302,21 +327,29 @@ fn validate_post_check_index(
     Ok(())
 }
 
-fn final_account_key_at(
+fn final_account_key_at_unchecked(
     final_account_index: u8,
     wallet_meta_index: u8,
     target_account_count: u8,
     target_remaining_accounts: &[CpiAccountMeta],
     wallet_key: &AccountKey,
 ) -> Result<AccountKey, ProgramError> {
-    Ok(final_account_meta_at(
-        final_account_index,
-        wallet_meta_index,
-        target_account_count,
-        target_remaining_accounts,
-        wallet_key,
-    )?
-    .key)
+    if final_account_index > target_account_count {
+        return Err(AgentVaultError::InvalidPostCheck.into());
+    }
+    if final_account_index == wallet_meta_index {
+        return Ok(*wallet_key);
+    }
+
+    let remaining_index = if final_account_index < wallet_meta_index {
+        final_account_index as usize
+    } else {
+        final_account_index as usize - 1
+    };
+    target_remaining_accounts
+        .get(remaining_index)
+        .map(|account| account.key)
+        .ok_or(AgentVaultError::InvalidPostCheck.into())
 }
 
 fn count_final_account_key(
