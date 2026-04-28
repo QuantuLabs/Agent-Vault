@@ -74,6 +74,7 @@ release manifest.
 ## Build And Test
 
 ```bash
+NO_DNA=1 cargo clippy --offline --all-targets -- -D warnings
 NO_DNA=1 cargo test --offline
 NO_DNA=1 cargo build-sbf
 NO_DNA=1 cargo test --offline --manifest-path tests/runtime/Cargo.toml
@@ -86,9 +87,9 @@ Full local release verification:
 NO_DNA=1 ./scripts/verify-devnet-release.sh
 ```
 
-The verification script runs formatting, unit tests, SBF build, SBF stack-log
-checks, LiteSVM runtime tests, Kani harnesses, and release artifact hash/size
-checks.
+The verification script runs formatting, Clippy with warnings denied, unit
+tests, SBF build, SBF stack-log checks, LiteSVM runtime tests, Kani harnesses,
+and release artifact hash/size checks.
 
 ## Repository Layout
 

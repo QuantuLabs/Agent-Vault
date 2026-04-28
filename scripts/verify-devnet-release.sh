@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
 cargo fmt --check
+NO_DNA=1 cargo clippy --offline --all-targets -- -D warnings
 cargo test --offline
 
 BUILD_LOG="${TMPDIR:-/tmp}/agent-vault-build-sbf.log"
