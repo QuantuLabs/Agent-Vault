@@ -1,0 +1,22 @@
+[package]
+name = "mock-amm"
+version = "0.1.0"
+description = "Test-only mock AMM target for Agent Vault checked CPI"
+edition = "2021"
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "mock_amm"
+
+[features]
+default = []
+no-entrypoint = []
+
+[dependencies]
+pinocchio = { version = "0.10", features = ["cpi"] }
+
+[lints]
+workspace = true

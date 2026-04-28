@@ -1,0 +1,17 @@
+[workspace]
+members = ["programs/agent-vault", "programs/mock-amm"]
+resolver = "2"
+
+[workspace.package]
+license = "Apache-2.0"
+repository = "https://github.com/QuantuLabs/Agent-Vault"
+
+[workspace.lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_os, values("solana"))'] }
+
+[profile.release]
+overflow-checks = true
+lto = "fat"
+codegen-units = 1
+opt-level = "z"
+strip = true
