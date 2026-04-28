@@ -1,0 +1,47 @@
+{
+  "schema": "agent-vault.release-manifest.v0",
+  "name": "Agent Vault",
+  "release": "devnet-v0.1.0-candidate",
+  "cluster": "devnet",
+  "deploymentStatus": "candidate-not-deployed",
+  "sourceCommit": "628071e1480a90a9b46ca52dda65159d617838a1",
+  "build": {
+    "command": "NO_DNA=1 cargo build-sbf",
+    "solanaCargoBuildSbf": "2.3.10",
+    "platformTools": "1.48",
+    "rustc": "1.84.1",
+    "features": [
+      "devnet"
+    ]
+  },
+  "program": {
+    "id": "36u7KMBuxjExvU6V2nfTX5SnNdYMGUupFiYouLzrgpfW",
+    "globalConfigPda": "Fv7ffwFuAZBiCZ6dpBPKEgYEGMXpSArmqvaqfH35Gbod",
+    "globalConfigBump": 255,
+    "sbfElfSha256": "c9d84873ea51b750ae7aa0453e406798d3edaa80067bb05f9acecf2ed51bb824",
+    "sbfElfSizeBytes": 147952
+  },
+  "expectedGlobalConfig": {
+    "initializer": "2KmHw8VbShuz9xfj3ecEjBM5nPKR5BcYHRDSFfK1286t",
+    "registryProgram": "8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C",
+    "collection": "6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA",
+    "feeTreasury": "EbHMHsePB6GYxjqgz9k2aC4NACx63vTeBXzXyHWFvqPK",
+    "vaultActivationFeeLamports": 500000
+  },
+  "registry": {
+    "rootConfigPda": "GGQfKNpXq8HchNxecLfXi8D7xz9PDppdPAPgr5Fx4Nvd",
+    "rootAuthority": "2KmHw8VbShuz9xfj3ecEjBM5nPKR5BcYHRDSFfK1286t",
+    "baseCollection": "6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA"
+  },
+  "deploymentVerification": {
+    "programDataAddress": null,
+    "programDataSha256": null,
+    "upgradeAuthority": null,
+    "upgradePolicy": "not-deployed"
+  },
+  "notes": [
+    "This manifest is a devnet candidate generated from the local SBF build before deployment.",
+    "sourceCommit identifies the public source commit used to reproduce the SBF artifact, not necessarily the manifest commit itself.",
+    "After deployment, programDataAddress, programDataSha256, upgradeAuthority, and upgradePolicy must be filled from onchain state."
+  ]
+}

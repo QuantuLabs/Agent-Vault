@@ -7,7 +7,7 @@ node_modules/
 .env
 .env.*
 
-# Local/internal planning docs. Keep the public spec tracked.
+# Local/internal planning and specification docs.
 docs/00-overview.md
 docs/BACKLOG.md
 docs/COST_ESTIMATE.md
@@ -16,6 +16,7 @@ docs/OPTIMIZATION.md
 docs/REFERENCES.md
 docs/RPC_STRATEGY.md
 docs/SDK_API.md
+docs/SPEC.md
 docs/*.html
 
 # Solana / local deploy artifacts
