@@ -240,6 +240,7 @@ fn runtime_item_exists(name: &str) -> bool {
     if name == "scripts/verify-devnet-release.sh" {
         return VERIFY_DEVNET_RELEASE_SCRIPT.contains("verify-formal.sh")
             && VERIFY_DEVNET_RELEASE_SCRIPT.contains("cargo clippy")
+            && VERIFY_DEVNET_RELEASE_SCRIPT.contains("--test-threads=1")
             && VERIFY_DEVNET_RELEASE_SCRIPT.contains("devnet_release_cost_report");
     }
 
