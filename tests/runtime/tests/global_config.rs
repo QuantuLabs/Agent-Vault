@@ -2,7 +2,8 @@ use {
     agent_vault::{
         agent_account::{
             AGENT_ACCOUNT_ASSET_OFFSET, AGENT_ACCOUNT_BUMP_OFFSET, AGENT_ACCOUNT_COLLECTION_OFFSET,
-            AGENT_ACCOUNT_DISCRIMINATOR, AGENT_ACCOUNT_MIN_LEN,
+            AGENT_ACCOUNT_CREATOR_OFFSET, AGENT_ACCOUNT_DISCRIMINATOR, AGENT_ACCOUNT_MIN_LEN,
+            AGENT_ACCOUNT_OWNER_OFFSET,
         },
         constants::{
             EXPECTED_ACTIVATION_FEE_LAMPORTS, LABEL_LEN, WALLET_FLAG_ACTIVE,
@@ -219,6 +220,10 @@ fn install_agent_fixture(svm: &mut LiteSVM, agent_asset: Address) -> (Address, A
     agent_data[0..8].copy_from_slice(&AGENT_ACCOUNT_DISCRIMINATOR);
     agent_data[AGENT_ACCOUNT_COLLECTION_OFFSET..AGENT_ACCOUNT_COLLECTION_OFFSET + 32]
         .copy_from_slice(COLLECTION.as_ref());
+    agent_data[AGENT_ACCOUNT_CREATOR_OFFSET..AGENT_ACCOUNT_CREATOR_OFFSET + 32]
+        .copy_from_slice(INITIALIZER.as_ref());
+    agent_data[AGENT_ACCOUNT_OWNER_OFFSET..AGENT_ACCOUNT_OWNER_OFFSET + 32]
+        .copy_from_slice(INITIALIZER.as_ref());
     agent_data[AGENT_ACCOUNT_ASSET_OFFSET..AGENT_ACCOUNT_ASSET_OFFSET + 32]
         .copy_from_slice(agent_asset.as_ref());
     agent_data[AGENT_ACCOUNT_BUMP_OFFSET] = bump;
@@ -1600,6 +1605,173 @@ fn init_vault_config_is_one_time_fee() {
 }
 
 #[test]
+fn routine_v0_instructions_do_not_charge_protocol_fees() {
+    let mut svm = runtime();
+    initialize_global_config(&mut svm);
+    svm.airdrop(&FEE_TREASURY, 1).unwrap();
+
+    let agent_asset = Address::new_unique();
+    let vault_config = create_agent_vault(&mut svm, agent_asset);
+    let fee_balance = svm.get_balance(&FEE_TREASURY).unwrap();
+    let assert_no_fee = |svm: &LiteSVM| {
+        assert_eq!(svm.get_balance(&FEE_TREASURY).unwrap(), fee_balance);
+    };
+
+    let wallet = wallet_pda(&agent_asset, 0);
+    send_unsigned_tx(
+        &mut svm,
+        create_wallet_ix(agent_asset, vault_config, wallet),
+    )
+    .unwrap();
+    let wallet_rent_floor = svm.get_balance(&wallet).unwrap();
+    assert_no_fee(&svm);
+
+    let wallet_1 = wallet_pda(&agent_asset, 1);
+    send_unsigned_tx(
+        &mut svm,
+        create_wallet_ix(agent_asset, vault_config, wallet_1),
+    )
+    .unwrap();
+    assert_no_fee(&svm);
+
+    send_unsigned_tx(
+        &mut svm,
+        update_wallet_label_ix(agent_asset, vault_config, wallet),
+    )
+    .unwrap();
+    assert_no_fee(&svm);
+
+    send_unsigned_tx(&mut svm, deposit_sol_ix(agent_asset, wallet, 1_000_000)).unwrap();
+    assert_no_fee(&svm);
+
+    let destination = Address::new_unique();
+    svm.airdrop(&destination, 1).unwrap();
+    send_unsigned_tx(
+        &mut svm,
+        withdraw_sol_ix(agent_asset, wallet, destination, 100_000),
+    )
+    .unwrap();
+    assert_no_fee(&svm);
+
+    send_unsigned_tx(
+        &mut svm,
+        transfer_sol_ix(agent_asset, 0, wallet, 1, wallet_1, 100_000),
+    )
+    .unwrap();
+    assert_no_fee(&svm);
+
+    let mint = Address::new_unique();
+    install_mint(&mut svm, mint, TOKEN_PROGRAM, 6);
+    send_unsigned_tx(
+        &mut svm,
+        create_wallet_ata_ix(agent_asset, vault_config, wallet, mint, TOKEN_PROGRAM, 0),
+    )
+    .unwrap();
+    assert_no_fee(&svm);
+
+    let source_ata = ata_address(&wallet, &mint, &TOKEN_PROGRAM);
+    let token_destination = Address::new_unique();
+    install_token_account(
+        &mut svm,
+        source_ata,
+        TOKEN_PROGRAM,
+        token_account_data(mint, wallet, 25),
+    );
+    install_token_account(
+        &mut svm,
+        token_destination,
+        TOKEN_PROGRAM,
+        token_account_data(mint, Address::new_unique(), 0),
+    );
+    send_unsigned_tx(
+        &mut svm,
+        transfer_spl_ix(
+            agent_asset,
+            vault_config,
+            wallet,
+            mint,
+            source_ata,
+            token_destination,
+            TOKEN_PROGRAM,
+            25,
+            6,
+            0,
+        ),
+    )
+    .unwrap();
+    assert_no_fee(&svm);
+
+    let rent_receiver = Address::new_unique();
+    svm.airdrop(&rent_receiver, 1).unwrap();
+    send_unsigned_tx(
+        &mut svm,
+        close_wallet_ata_ix(
+            agent_asset,
+            vault_config,
+            wallet,
+            mint,
+            TOKEN_PROGRAM,
+            rent_receiver,
+        ),
+    )
+    .unwrap();
+    assert_no_fee(&svm);
+
+    let native_reserve = 2_039_280;
+    let wallet_wsol_ata = ata_address(&wallet, &NATIVE_MINT, &TOKEN_PROGRAM);
+    svm.set_account(
+        wallet_wsol_ata,
+        Account {
+            lamports: native_reserve,
+            data: native_token_account_data(NATIVE_MINT, wallet, 0, native_reserve),
+            owner: TOKEN_PROGRAM,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    send_unsigned_tx(
+        &mut svm,
+        wrap_sol_ix(agent_asset, vault_config, wallet, wallet_wsol_ata, 250_000),
+    )
+    .unwrap();
+    assert_no_fee(&svm);
+
+    send_unsigned_tx(&mut svm, sync_native_ix(wallet_wsol_ata)).unwrap();
+    send_unsigned_tx(&mut svm, unwrap_sol_ix(agent_asset, vault_config, wallet)).unwrap();
+    assert_no_fee(&svm);
+
+    let current_wallet_balance = svm.get_balance(&wallet).unwrap();
+    send_unsigned_tx(
+        &mut svm,
+        execute_cpi_checked_memo_ix(agent_asset, vault_config, wallet, current_wallet_balance),
+    )
+    .unwrap();
+    assert_no_fee(&svm);
+
+    let excess_lamports = svm.get_balance(&wallet).unwrap() - wallet_rent_floor;
+    send_unsigned_tx(
+        &mut svm,
+        withdraw_sol_ix(agent_asset, wallet, destination, excess_lamports),
+    )
+    .unwrap();
+    assert_no_fee(&svm);
+
+    send_unsigned_tx(
+        &mut svm,
+        close_wallet_ix(agent_asset, vault_config, wallet, rent_receiver),
+    )
+    .unwrap();
+    assert_no_fee(&svm);
+
+    send_unsigned_tx(
+        &mut svm,
+        reopen_wallet_for_recovery_ix(agent_asset, vault_config, wallet),
+    )
+    .unwrap();
+    assert_no_fee(&svm);
+}
+
+#[test]
 fn init_vault_config_rejects_malformed_registry_agent_account() {
     let mut svm = runtime();
     initialize_global_config(&mut svm);
@@ -1773,6 +1945,62 @@ fn init_vault_config_checks_treasury_registry_owner_pda_and_dusted_pdas() {
         TransactionError::InstructionError(
             0,
             InstructionError::Custom(AgentVaultError::InvalidOwner as u32),
+        )
+    );
+}
+
+#[test]
+fn config_loads_reject_valid_data_at_wrong_pda_addresses() {
+    let mut svm = runtime();
+    initialize_global_config(&mut svm);
+    svm.airdrop(&FEE_TREASURY, 1).unwrap();
+
+    let agent_asset = Address::new_unique();
+    let (vault_config, wallet) = create_agent_vault_and_wallet(&mut svm, agent_asset);
+
+    let wrong_global_config = Address::new_unique();
+    svm.set_account(
+        wrong_global_config,
+        Account {
+            lamports: 1_000_000,
+            data: svm.get_account(&global_config_pda()).unwrap().data,
+            owner: PROGRAM_ID,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let mut wrong_global_ix = update_wallet_label_ix(agent_asset, vault_config, wallet);
+    wrong_global_ix.accounts[1] = AccountMeta::new_readonly(wrong_global_config, false);
+    let wrong_global_error = send_unsigned_tx(&mut svm, wrong_global_ix).unwrap_err();
+    assert_eq!(
+        wrong_global_error,
+        TransactionError::InstructionError(
+            0,
+            InstructionError::Custom(AgentVaultError::InvalidPda as u32),
+        )
+    );
+
+    let wrong_vault_config = Address::new_unique();
+    svm.set_account(
+        wrong_vault_config,
+        Account {
+            lamports: 1_000_000,
+            data: svm.get_account(&vault_config).unwrap().data,
+            owner: PROGRAM_ID,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let wrong_vault_error = send_unsigned_tx(
+        &mut svm,
+        update_wallet_label_ix(agent_asset, wrong_vault_config, wallet),
+    )
+    .unwrap_err();
+    assert_eq!(
+        wrong_vault_error,
+        TransactionError::InstructionError(
+            0,
+            InstructionError::Custom(AgentVaultError::InvalidPda as u32),
         )
     );
 }

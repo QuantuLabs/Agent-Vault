@@ -18,7 +18,7 @@ use crate::{
     pda::{
         agent_wallet_index_seed, derive_agent_wallet, derive_associated_token_account,
         derive_global_config, derive_registry_agent_account, derive_vault_config,
-        validate_agent_wallet_pda, validate_global_config_pda, validate_vault_config_pda,
+        validate_agent_wallet_pda,
     },
     state::{
         pack_global_config, pack_vault_config, pack_wallet, unpack_global_config,
@@ -1817,9 +1817,15 @@ fn load_global_config(
     account: &AccountView,
 ) -> Result<GlobalConfig, ProgramError> {
     assert_owned_by(account, program_id)?;
+    let pda = derive_global_config(program_id)?;
+    if account.address() != &pda.address {
+        return Err(AgentVaultError::InvalidPda.into());
+    }
     let data = account.try_borrow()?;
     let config = unpack_global_config(&data)?;
-    validate_global_config_pda(account.address(), config.bump, program_id)?;
+    if config.bump != pda.bump {
+        return Err(AgentVaultError::InvalidBump.into());
+    }
     Ok(config)
 }
 
@@ -1829,9 +1835,15 @@ fn load_vault_config(
     agent_asset: &Address,
 ) -> Result<VaultConfig, ProgramError> {
     assert_owned_by(account, program_id)?;
+    let pda = derive_vault_config(program_id, agent_asset)?;
+    if account.address() != &pda.address {
+        return Err(AgentVaultError::InvalidPda.into());
+    }
     let data = account.try_borrow()?;
     let config = unpack_vault_config(&data)?;
-    validate_vault_config_pda(account.address(), config.bump, program_id, agent_asset)?;
+    if config.bump != pda.bump {
+        return Err(AgentVaultError::InvalidBump.into());
+    }
     Ok(config)
 }
 
@@ -1899,20 +1911,29 @@ fn checked_lamport_move_preserving_floor(
     if lamports == 0 {
         return Ok(());
     }
-    let from_lamports = from.lamports();
+    let (remaining, to_lamports) =
+        checked_lamport_move_result(from.lamports(), to.lamports(), lamports, from_floor)?;
+    from.set_lamports(remaining);
+    to.set_lamports(to_lamports);
+    Ok(())
+}
+
+pub(crate) fn checked_lamport_move_result(
+    from_lamports: u64,
+    to_lamports: u64,
+    lamports: u64,
+    from_floor: u64,
+) -> Result<(u64, u64), ProgramError> {
     let remaining = from_lamports
         .checked_sub(lamports)
         .ok_or(AgentVaultError::ArithmeticUnderflow)?;
     if remaining < from_floor {
         return Err(AgentVaultError::RentFloorViolation.into());
     }
-    let to_lamports = to
-        .lamports()
+    let credited = to_lamports
         .checked_add(lamports)
         .ok_or(AgentVaultError::ArithmeticOverflow)?;
-    from.set_lamports(remaining);
-    to.set_lamports(to_lamports);
-    Ok(())
+    Ok((remaining, credited))
 }
 
 fn checked_close_account(account: &AccountView, receiver: &AccountView) -> ProgramResult {

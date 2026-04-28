@@ -13,7 +13,7 @@ const COVERAGE: &[CoverageRow] = &[
             "protected_ops_follow_live_core_asset_owner_and_collection",
             "init_vault_config_rejects_malformed_registry_agent_account",
         ],
-        formal_harnesses: &[],
+        formal_harnesses: &["core_asset_parser_uses_spec_offsets"],
     },
     CoverageRow {
         id: "identity.registry",
@@ -22,7 +22,7 @@ const COVERAGE: &[CoverageRow] = &[
             "initializes_global_config_from_devnet_manifest_constants",
             "init_vault_config_checks_treasury_registry_owner_pda_and_dusted_pdas",
         ],
-        formal_harnesses: &[],
+        formal_harnesses: &["agent_account_parser_uses_8004_header_offsets"],
     },
     CoverageRow {
         id: "global-config.immutable",
@@ -30,8 +30,34 @@ const COVERAGE: &[CoverageRow] = &[
         runtime_tests: &[
             "initialize_global_config_is_immutable_once_created",
             "rejects_non_manifest_global_config_fields_before_create",
+            "config_loads_reject_valid_data_at_wrong_pda_addresses",
         ],
-        formal_harnesses: &["global_config_pack_unpack_roundtrip"],
+        formal_harnesses: &[
+            "global_config_pack_unpack_roundtrip",
+            "v0_constants_match_spec_limits_and_tags",
+        ],
+    },
+    CoverageRow {
+        id: "fees.activation-only",
+        requirement: "V0 charges only the one-time vault activation fee and no routine protocol fees.",
+        runtime_tests: &[
+            "init_vault_config_is_one_time_fee",
+            "routine_v0_instructions_do_not_charge_protocol_fees",
+        ],
+        formal_harnesses: &["v0_constants_match_spec_limits_and_tags"],
+    },
+    CoverageRow {
+        id: "account-layouts",
+        requirement: "Fixed account sizes, reserved bytes, wallet flags, and little-endian indexes match V0.",
+        runtime_tests: &[
+            "init_create_deposit_and_withdraw_sol_flow",
+            "dusted_system_owned_wallet_pda_can_be_created_and_reopened",
+        ],
+        formal_harnesses: &[
+            "vault_config_pack_unpack_roundtrip_with_reserved_v0_flags",
+            "vault_config_unpack_rejects_nonzero_reserved_flags",
+            "agent_wallet_index_seed_is_u16_little_endian",
+        ],
     },
     CoverageRow {
         id: "wallet.indexed-pdas",
@@ -54,7 +80,7 @@ const COVERAGE: &[CoverageRow] = &[
             "recovery_only_wallet_allows_constrained_cleanup_paths",
             "recovery_only_wallet_rejects_hot_path_operations",
         ],
-        formal_harnesses: &[],
+        formal_harnesses: &["lamport_move_result_preserves_sum_and_rent_floor"],
     },
     CoverageRow {
         id: "spl-token.basic",
@@ -80,7 +106,7 @@ const COVERAGE: &[CoverageRow] = &[
             "wsol_wrap_rejects_malformed_wallet_atas",
             "unwrap_sol_rejects_malformed_wsol_ata",
         ],
-        formal_harnesses: &[],
+        formal_harnesses: &["token_program_kind_encoding_is_stable"],
     },
     CoverageRow {
         id: "checked-cpi.core",
@@ -108,6 +134,7 @@ const COVERAGE: &[CoverageRow] = &[
         ],
         formal_harnesses: &[
             "cpi_plan_rejects_protected_or_wallet_remaining_accounts",
+            "cpi_duplicate_policy_allows_identical_unprotected_duplicates",
             "sol_balance_post_check_parser_is_total_for_valid_payloads",
         ],
     },
@@ -152,8 +179,13 @@ fn v0_spec_coverage_matrix_has_no_gaps() {
             row.id
         );
         assert!(
-            !row.runtime_tests.is_empty() || !row.formal_harnesses.is_empty(),
-            "coverage row {} has no tests or harnesses",
+            !row.runtime_tests.is_empty(),
+            "coverage row {} has no LiteSVM/runtime coverage",
+            row.id
+        );
+        assert!(
+            !row.formal_harnesses.is_empty(),
+            "coverage row {} has no Kani/formal coverage",
             row.id
         );
     }
