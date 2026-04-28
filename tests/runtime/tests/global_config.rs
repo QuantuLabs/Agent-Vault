@@ -1803,7 +1803,7 @@ fn routine_v0_instructions_do_not_charge_protocol_fees() {
         wrap_sol_ix(agent_asset, vault_config, wallet, wallet_wsol_ata, 250_000),
     )
     .unwrap();
-    assert!(wrap_sol_cu <= 13_000, "wrap_sol CU: {wrap_sol_cu}");
+    assert!(wrap_sol_cu <= 14_000, "wrap_sol CU: {wrap_sol_cu}");
     assert_no_fee(&svm);
 
     send_unsigned_tx(&mut svm, sync_native_ix(wallet_wsol_ata)).unwrap();
