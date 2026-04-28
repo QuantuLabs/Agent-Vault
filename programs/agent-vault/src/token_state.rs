@@ -493,21 +493,22 @@ fn parse_mint_extensions(tlv_data: &[u8]) -> Result<MintExtensionPolicy<'_>, Pro
     let mut policy = MintExtensionPolicy::none();
     let mut offset = 0usize;
 
-    while let Some((extension_type, payload, next_offset)) = next_tlv_entry(tlv_data, offset)? {
-        match extension_type {
+    while let Some(entry) = next_tlv_entry(tlv_data, offset)? {
+        match entry.extension_type {
             EXTENSION_TYPE_TRANSFER_FEE_CONFIG => {
-                if policy.transfer_fee_config.is_some() || payload.len() != TRANSFER_FEE_CONFIG_LEN
+                if policy.transfer_fee_config.is_some()
+                    || entry.payload.len() != TRANSFER_FEE_CONFIG_LEN
                 {
                     return Err(AgentVaultError::UnsupportedTokenExtension.into());
                 }
-                let transfer_fee_config = parse_transfer_fee_config(payload)?;
+                let transfer_fee_config = parse_transfer_fee_config(entry.payload)?;
                 policy.transfer_fee_config = Some(transfer_fee_config);
                 policy.entry_count = checked_entry_count(policy.entry_count)?;
             }
             _ => return Err(AgentVaultError::UnsupportedTokenExtension.into()),
         }
 
-        offset = next_offset;
+        offset = entry.next_offset;
     }
 
     Ok(policy)
@@ -520,41 +521,47 @@ fn parse_token_account_extensions(
     let mut policy = TokenAccountExtensionPolicy::none();
     let mut offset = 0usize;
 
-    while let Some((extension_type, payload, next_offset)) = next_tlv_entry(tlv_data, offset)? {
-        match extension_type {
+    while let Some(entry) = next_tlv_entry(tlv_data, offset)? {
+        match entry.extension_type {
             EXTENSION_TYPE_IMMUTABLE_OWNER => {
-                if policy.immutable_owner.is_some() || payload.len() != IMMUTABLE_OWNER_LEN {
+                if policy.immutable_owner.is_some() || entry.payload.len() != IMMUTABLE_OWNER_LEN {
                     return Err(AgentVaultError::UnsupportedTokenExtension.into());
                 }
-                policy.immutable_owner = Some(ImmutableOwner { raw: payload });
+                policy.immutable_owner = Some(ImmutableOwner { raw: entry.payload });
                 policy.entry_count = checked_entry_count(policy.entry_count)?;
             }
             EXTENSION_TYPE_TRANSFER_FEE_AMOUNT => {
                 if !mint_has_transfer_fee_config
                     || policy.transfer_fee_amount.is_some()
-                    || payload.len() != TRANSFER_FEE_AMOUNT_LEN
+                    || entry.payload.len() != TRANSFER_FEE_AMOUNT_LEN
                 {
                     return Err(AgentVaultError::UnsupportedTokenExtension.into());
                 }
                 policy.transfer_fee_amount = Some(TransferFeeAmount {
-                    raw: payload,
-                    withheld_amount: read_u64(payload, 0)?,
+                    raw: entry.payload,
+                    withheld_amount: read_u64(entry.payload, 0)?,
                 });
                 policy.entry_count = checked_entry_count(policy.entry_count)?;
             }
             _ => return Err(AgentVaultError::UnsupportedTokenExtension.into()),
         }
 
-        offset = next_offset;
+        offset = entry.next_offset;
     }
 
     Ok(policy)
 }
 
+struct ParsedTlvEntry<'a> {
+    extension_type: u16,
+    payload: &'a [u8],
+    next_offset: usize,
+}
+
 fn next_tlv_entry(
     tlv_data: &[u8],
     offset: usize,
-) -> Result<Option<(u16, &[u8], usize)>, ProgramError> {
+) -> Result<Option<ParsedTlvEntry<'_>>, ProgramError> {
     if offset >= tlv_data.len() {
         return Ok(None);
     }
@@ -590,11 +597,11 @@ fn next_tlv_entry(
         return Err(AgentVaultError::InvalidTokenAccount.into());
     }
 
-    Ok(Some((
+    Ok(Some(ParsedTlvEntry {
         extension_type,
-        &tlv_data[payload_offset..next_offset],
+        payload: &tlv_data[payload_offset..next_offset],
         next_offset,
-    )))
+    }))
 }
 
 fn parse_transfer_fee_config(payload: &[u8]) -> Result<TransferFeeConfig<'_>, ProgramError> {

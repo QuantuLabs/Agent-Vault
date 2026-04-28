@@ -237,7 +237,7 @@ fn process_create_wallet(
     let expected_collection = address_bytes(&EXPECTED_COLLECTION);
     assert_core_asset_owner_and_collection(holder, agent_asset, &expected_collection)?;
     let mut vault = load_vault_config(program_id, vault_config_account, agent_asset.address())?;
-    if vault.wallet_count >= MAX_WALLETS {
+    if vault.wallet_count == MAX_WALLETS {
         return Err(AgentVaultError::WalletCountOverflow.into());
     }
     let index = vault.wallet_count;
@@ -871,13 +871,15 @@ fn process_execute_cpi_checked(
             wallet_account.address(),
         )];
         return execute_checked_cpi_with_final_accounts(
-            program_id,
-            ix,
-            wallet_account,
-            &wallet_key,
-            agent_asset.address(),
-            target_program,
-            &wallet,
+            CheckedCpiContext {
+                program_id,
+                ix,
+                wallet_account,
+                wallet_key: &wallet_key,
+                agent_asset: agent_asset.address(),
+                target_program,
+                wallet: &wallet,
+            },
             &final_views,
             &final_metas,
         );
@@ -910,62 +912,68 @@ fn process_execute_cpi_checked(
         &mut final_metas,
     )?;
     execute_checked_cpi_with_final_accounts(
-        program_id,
-        ix,
-        wallet_account,
-        &wallet_key,
-        agent_asset.address(),
-        target_program,
-        &wallet,
+        CheckedCpiContext {
+            program_id,
+            ix,
+            wallet_account,
+            wallet_key: &wallet_key,
+            agent_asset: agent_asset.address(),
+            target_program,
+            wallet: &wallet,
+        },
         &final_views[..final_count],
         &final_metas[..final_count],
     )
 }
 
-fn execute_checked_cpi_with_final_accounts<'a>(
-    program_id: &Address,
-    ix: &crate::instruction::ExecuteCpiChecked<'_>,
+struct CheckedCpiContext<'a, 'ix, 'data> {
+    program_id: &'a Address,
+    ix: &'ix crate::instruction::ExecuteCpiChecked<'data>,
     wallet_account: &'a AccountView,
-    wallet_key: &[u8; PUBKEY_LEN],
-    agent_asset: &Address,
+    wallet_key: &'a [u8; PUBKEY_LEN],
+    agent_asset: &'a Address,
     target_program: &'a AccountView,
-    wallet: &AgentWallet,
+    wallet: &'a AgentWallet,
+}
+
+fn execute_checked_cpi_with_final_accounts<'a>(
+    ctx: CheckedCpiContext<'a, '_, '_>,
     final_views: &[&'a AccountView],
     final_metas: &[InstructionAccount<'a>],
 ) -> ProgramResult {
     let mut pre_values = [0u64; crate::constants::MAX_POST_CHECKS as usize];
     let mut custody_snapshots =
         [CustodySnapshot::EMPTY; crate::constants::MAX_POST_CHECKS as usize];
-    snapshot_post_checks(ix, final_views, &mut pre_values, &mut custody_snapshots)?;
-    enforce_wallet_controlled_token_checks(ix, final_views, final_metas, wallet_key)?;
-    enforce_writable_non_token_owner_checks(ix, final_views, final_metas)?;
+    snapshot_post_checks(ctx.ix, final_views, &mut pre_values, &mut custody_snapshots)?;
+    enforce_wallet_controlled_token_checks(ctx.ix, final_views, final_metas, ctx.wallet_key)?;
+    enforce_writable_non_token_owner_checks(ctx.ix, final_views, final_metas)?;
 
-    let index_seed = agent_wallet_index_seed(wallet.index);
-    let bump_seed = [wallet.bump];
+    let index_seed = agent_wallet_index_seed(ctx.wallet.index);
+    let bump_seed = [ctx.wallet.bump];
     let seeds = [
         Seed::from(SEED_AGENT_WALLET),
-        Seed::from(agent_asset.as_ref()),
+        Seed::from(ctx.agent_asset.as_ref()),
         Seed::from(&index_seed),
         Seed::from(&bump_seed),
     ];
     let signer = Signer::from(&seeds);
     let instruction = InstructionView {
-        program_id: target_program.address(),
+        program_id: ctx.target_program.address(),
         accounts: final_metas,
-        data: ix.target_ix_data,
+        data: ctx.ix.target_ix_data,
     };
     invoke_signed_with_slice(&instruction, final_views, &[signer])?;
 
-    assert_owned_by(wallet_account, program_id)?;
-    if wallet_account.data_len() != WALLET_LEN {
+    assert_owned_by(ctx.wallet_account, ctx.program_id)?;
+    if ctx.wallet_account.data_len() != WALLET_LEN {
         return Err(AgentVaultError::InvalidWallet.into());
     }
     let rent_floor = Rent::get()?.try_minimum_balance(WALLET_LEN)?;
-    if wallet_account.lamports() < rent_floor {
+    if ctx.wallet_account.lamports() < rent_floor {
         return Err(AgentVaultError::RentFloorViolation.into());
     }
-    enforce_wallet_controlled_token_checks(ix, final_views, final_metas, wallet_key)?;
-    evaluate_post_checks(ix, final_views, &pre_values, &custody_snapshots)
+    enforce_wallet_controlled_token_checks(ctx.ix, final_views, final_metas, ctx.wallet_key)?;
+    evaluate_post_checks(ctx.ix, final_views, &pre_values, &custody_snapshots)
 }
 
 #[derive(Clone, Copy, Eq, PartialEq)]

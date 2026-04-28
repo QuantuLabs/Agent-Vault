@@ -64,8 +64,8 @@ pub fn assert_core_asset_owner_and_collection(
     {
         return Err(AgentVaultError::InvalidHolder.into());
     }
-    if &data[CORE_ASSET_COLLECTION_OFFSET..CORE_ASSET_COLLECTION_OFFSET + PUBKEY_LEN]
-        != &expected_collection[..]
+    if data[CORE_ASSET_COLLECTION_OFFSET..CORE_ASSET_COLLECTION_OFFSET + PUBKEY_LEN]
+        != expected_collection[..]
     {
         return Err(AgentVaultError::InvalidCollection.into());
     }
