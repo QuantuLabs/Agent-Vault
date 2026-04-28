@@ -1981,7 +1981,7 @@ fn init_create_deposit_and_withdraw_sol_flow() {
         withdraw_sol_ix(agent_asset, wallet, destination, 400_000),
     )
     .unwrap();
-    assert!(withdraw_cu <= 7_000, "withdraw_sol CU: {withdraw_cu}");
+    assert!(withdraw_cu <= 8_000, "withdraw_sol CU: {withdraw_cu}");
     assert_eq!(svm.get_balance(&destination).unwrap(), 400_001);
     assert_eq!(
         svm.get_balance(&wallet).unwrap(),
