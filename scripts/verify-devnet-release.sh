@@ -4,9 +4,9 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-cargo fmt --check
+NO_DNA=1 cargo fmt --check
 NO_DNA=1 cargo clippy --offline --all-targets -- -D warnings
-cargo test --offline
+NO_DNA=1 cargo test --offline
 
 BUILD_LOG="${TMPDIR:-/tmp}/agent-vault-build-sbf.log"
 NO_DNA=1 cargo build-sbf 2>&1 | tee "$BUILD_LOG"
@@ -16,8 +16,8 @@ if grep -E "Stack offset|overwrites values in the frame" "$BUILD_LOG" >/dev/null
   exit 1
 fi
 
-cargo test --offline --manifest-path tests/runtime/Cargo.toml
-cargo test --offline --manifest-path tests/runtime/Cargo.toml devnet_release_cost_report -- --nocapture
+NO_DNA=1 cargo test --offline --manifest-path tests/runtime/Cargo.toml -- --test-threads=1
+NO_DNA=1 cargo test --offline --manifest-path tests/runtime/Cargo.toml devnet_release_cost_report -- --nocapture --test-threads=1
 NO_DNA=1 ./scripts/verify-formal.sh
 
 node <<'NODE'

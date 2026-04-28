@@ -77,7 +77,7 @@ release manifest.
 NO_DNA=1 cargo clippy --offline --all-targets -- -D warnings
 NO_DNA=1 cargo test --offline
 NO_DNA=1 cargo build-sbf
-NO_DNA=1 cargo test --offline --manifest-path tests/runtime/Cargo.toml
+NO_DNA=1 cargo test --offline --manifest-path tests/runtime/Cargo.toml -- --test-threads=1
 NO_DNA=1 ./scripts/verify-formal.sh
 ```
 
