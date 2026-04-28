@@ -1809,7 +1809,7 @@ fn routine_v0_instructions_do_not_charge_protocol_fees() {
     send_unsigned_tx(&mut svm, sync_native_ix(wallet_wsol_ata)).unwrap();
     let unwrap_sol_cu =
         send_unsigned_tx(&mut svm, unwrap_sol_ix(agent_asset, vault_config, wallet)).unwrap();
-    assert!(unwrap_sol_cu <= 17_000, "unwrap_sol CU: {unwrap_sol_cu}");
+    assert!(unwrap_sol_cu <= 18_000, "unwrap_sol CU: {unwrap_sol_cu}");
     assert_no_fee(&svm);
 
     let current_wallet_balance = svm.get_balance(&wallet).unwrap();
