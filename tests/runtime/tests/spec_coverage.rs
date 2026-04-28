@@ -147,7 +147,7 @@ const COVERAGE: &[CoverageRow] = &[
     },
     CoverageRow {
         id: "checked-cpi.defi",
-        requirement: "Swap-like CPI flows enforce max-input/min-output and account-state checks.",
+        requirement: "Swap-like CPI flows enforce max-input/min-output, and writable non-token accounts remain state-pinned.",
         runtime_tests: &[
             "execute_cpi_checked_mock_swap_enforces_max_input_and_min_output",
             "execute_cpi_checked_requires_state_checks_for_writable_non_token_accounts",
