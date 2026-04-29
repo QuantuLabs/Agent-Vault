@@ -31,6 +31,7 @@ SYSTEM_PROGRAM = Pubkey.from_string("11111111111111111111111111111111")
 CLOCK_SYSVAR = Pubkey.from_string("SysvarC1ock11111111111111111111111111111111")
 RENT_SYSVAR = Pubkey.from_string("SysvarRent111111111111111111111111111111111")
 TOKEN_PROGRAM = Pubkey.from_string("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA")
+TOKEN_2022_PROGRAM = Pubkey.from_string("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb")
 ASSOCIATED_TOKEN_PROGRAM = Pubkey.from_string("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL")
 METAPLEX_CORE_PROGRAM = Pubkey.from_string("CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d")
 NATIVE_MINT = Pubkey.from_string("So11111111111111111111111111111111111111112")
@@ -41,6 +42,7 @@ COLLECTION = Keypair.from_seed(bytes([3]) * 32).pubkey()
 AGENT_ASSET = Keypair.from_seed(bytes([4]) * 32).pubkey()
 RECIPIENT = Keypair.from_seed(bytes([5]) * 32).pubkey()
 REGISTRY_PROGRAM = Keypair.from_seed(bytes([9]) * 32).pubkey()
+FUNDER = Keypair.from_seed(bytes([22]) * 32)
 
 MINT_CREATE_ATA = Keypair.from_seed(bytes([6]) * 32).pubkey()
 MINT_TRANSFER = Keypair.from_seed(bytes([10]) * 32).pubkey()
@@ -50,11 +52,22 @@ TRANSFER_DEST = Keypair.from_seed(bytes([13]) * 32).pubkey()
 POOL_INPUT = Keypair.from_seed(bytes([14]) * 32).pubkey()
 SWAP_USER_OUTPUT = Keypair.from_seed(bytes([15]) * 32).pubkey()
 POOL_AUTHORITY = Keypair.from_seed(bytes([16]) * 32).pubkey()
+MINT_2022_CREATE = Keypair.from_seed(bytes([17]) * 32).pubkey()
+MINT_2022_TRANSFER = Keypair.from_seed(bytes([18]) * 32).pubkey()
+DEST_2022_TRANSFER = Keypair.from_seed(bytes([19]) * 32).pubkey()
+MINT_2022_FEE = Keypair.from_seed(bytes([20]) * 32).pubkey()
+DEST_2022_FEE = Keypair.from_seed(bytes([21]) * 32).pubkey()
+MINT_2022_UNSUPPORTED = Keypair.from_seed(bytes([23]) * 32).pubkey()
+MINT_2022_WITHHELD = Keypair.from_seed(bytes([24]) * 32).pubkey()
+MINT_2022_HIGH_FEE = Keypair.from_seed(bytes([25]) * 32).pubkey()
+DEST_2022_HIGH_FEE = Keypair.from_seed(bytes([26]) * 32).pubkey()
 
 ACTIVATION_FEE = 500_000
 LABEL_LEN = 16
 TOKEN_MINT_LEN = 82
 TOKEN_ACCOUNT_LEN = 165
+TOKEN_2022_EXTENSION_MINT_CLOSE_AUTHORITY = 3
+TOKEN_2022_MINT_CLOSE_AUTHORITY_LEN = 32
 CORE_ASSET_MIN_LEN = 66
 CORE_ASSET_V1_KEY = 1
 CORE_ASSET_OWNER_OFFSET = 1
@@ -77,12 +90,16 @@ TAG_DEPOSIT_SOL = 4
 TAG_WITHDRAW_SOL = 5
 TAG_TRANSFER_SOL = 6
 TAG_CLOSE_WALLET = 7
+TAG_REOPEN_WALLET_FOR_RECOVERY = 8
 TAG_CREATE_WALLET_ATA = 32
 TAG_TRANSFER_SPL = 33
 TAG_WRAP_SOL = 34
 TAG_UNWRAP_SOL = 35
 TAG_CLOSE_WALLET_ATA = 36
 TAG_EXECUTE_CPI_CHECKED = 64
+
+ERR_UNSUPPORTED_TOKEN_EXTENSION = 31
+ERR_INVALID_CPI_TARGET = 34
 
 
 def run(cmd):
@@ -167,6 +184,26 @@ def send_ixs(ixs, signers=None):
     raise TimeoutError(f"transaction did not confirm: {signature}")
 
 
+def expect_ixs_failure(ixs, label, signers=None, expected_custom_error=None):
+    try:
+        send_ixs(ixs, signers=signers)
+    except RuntimeError as exc:
+        message = str(exc)
+        if "Transaction simulation failed" not in message and "transaction failed" not in message:
+            raise
+        if expected_custom_error is not None:
+            decimal = f"'Custom': {expected_custom_error}"
+            json_decimal = f'"Custom": {expected_custom_error}'
+            hex_code = f"custom program error: 0x{expected_custom_error:x}"
+            if decimal not in message and json_decimal not in message and hex_code not in message:
+                raise AssertionError(
+                    f"expected custom error {expected_custom_error} for {label}, got: {message}"
+                )
+        print(f"localnet negative: {label}")
+        return
+    raise AssertionError(f"expected transaction failure: {label}")
+
+
 def pda(seeds, program_id=PROGRAM_ID):
     return Pubkey.find_program_address(seeds, program_id)[0]
 
@@ -206,30 +243,39 @@ def u64(value):
     return value.to_bytes(8, "little")
 
 
-def ix_initialize_global_config():
+def ix_initialize_global_config(
+    fee_lamports=ACTIVATION_FEE,
+    signer=None,
+    registry_program=REGISTRY_PROGRAM,
+    collection=COLLECTION,
+    fee_treasury=FEE_TREASURY,
+):
+    signer = signer or INITIALIZER.pubkey()
     data = bytes([TAG_INITIALIZE_GLOBAL_CONFIG])
-    data += bytes(REGISTRY_PROGRAM)
-    data += bytes(COLLECTION)
-    data += bytes(FEE_TREASURY)
-    data += u64(ACTIVATION_FEE)
+    data += bytes(registry_program)
+    data += bytes(collection)
+    data += bytes(fee_treasury)
+    data += u64(fee_lamports)
     return Instruction(
         PROGRAM_ID,
         data,
-        [am(INITIALIZER.pubkey(), True, True), am(global_config_pda(), False, True), am(SYSTEM_PROGRAM)],
+        [am(signer, True, True), am(global_config_pda(), False, True), am(SYSTEM_PROGRAM)],
     )
 
 
-def ix_init_vault_config(agent_account):
+def ix_init_vault_config(agent_account, holder=None, fee_treasury=None):
+    holder = holder or INITIALIZER.pubkey()
+    fee_treasury = fee_treasury or FEE_TREASURY
     return Instruction(
         PROGRAM_ID,
         bytes([TAG_INIT_VAULT_CONFIG]),
         [
-            am(INITIALIZER.pubkey(), True, True),
+            am(holder, True, True),
             am(global_config_pda()),
             am(vault_config_pda(AGENT_ASSET), writable=True),
             am(AGENT_ASSET),
             am(agent_account),
-            am(FEE_TREASURY, writable=True),
+            am(fee_treasury, writable=True),
             am(CLOCK_SYSVAR),
             am(SYSTEM_PROGRAM),
         ],
@@ -266,12 +312,13 @@ def ix_update_wallet_label(index, label):
     )
 
 
-def ix_deposit_sol(index, amount):
+def ix_deposit_sol(index, amount, funder=None):
+    funder = funder or INITIALIZER.pubkey()
     return Instruction(
         PROGRAM_ID,
         bytes([TAG_DEPOSIT_SOL]) + u64(amount),
         [
-            am(INITIALIZER.pubkey(), True, True),
+            am(funder, True, True),
             am(wallet_pda(AGENT_ASSET, index), writable=True),
             am(AGENT_ASSET),
             am(SYSTEM_PROGRAM),
@@ -323,6 +370,22 @@ def ix_close_wallet(index, rent_receiver):
     )
 
 
+def ix_reopen_wallet_for_recovery(index, label):
+    data = bytes([TAG_REOPEN_WALLET_FOR_RECOVERY]) + u16(index) + label.encode()[:LABEL_LEN].ljust(LABEL_LEN, b"\0")
+    return Instruction(
+        PROGRAM_ID,
+        data,
+        [
+            am(INITIALIZER.pubkey(), True, True),
+            am(global_config_pda()),
+            am(vault_config_pda(AGENT_ASSET)),
+            am(wallet_pda(AGENT_ASSET, index), writable=True),
+            am(AGENT_ASSET),
+            am(SYSTEM_PROGRAM),
+        ],
+    )
+
+
 def ix_create_wallet_ata(index, mint, token_program=TOKEN_PROGRAM, kind=0):
     wallet = wallet_pda(AGENT_ASSET, index)
     return Instruction(
@@ -343,10 +406,19 @@ def ix_create_wallet_ata(index, mint, token_program=TOKEN_PROGRAM, kind=0):
     )
 
 
-def ix_transfer_spl(index, mint, source, destination, amount, decimals=6):
+def ix_transfer_spl(
+    index,
+    mint,
+    source,
+    destination,
+    amount,
+    decimals=6,
+    token_program=TOKEN_PROGRAM,
+    expected_fee=0,
+):
     return Instruction(
         PROGRAM_ID,
-        bytes([TAG_TRANSFER_SPL]) + u16(index) + u64(amount) + bytes([decimals]) + u64(0),
+        bytes([TAG_TRANSFER_SPL]) + u16(index) + u64(amount) + bytes([decimals]) + u64(expected_fee),
         [
             am(INITIALIZER.pubkey(), True),
             am(global_config_pda()),
@@ -356,12 +428,12 @@ def ix_transfer_spl(index, mint, source, destination, amount, decimals=6):
             am(mint),
             am(source, writable=True),
             am(destination, writable=True),
-            am(TOKEN_PROGRAM),
+            am(token_program),
         ],
     )
 
 
-def ix_close_wallet_ata(index, mint, rent_receiver):
+def ix_close_wallet_ata(index, mint, rent_receiver, token_program=TOKEN_PROGRAM):
     wallet = wallet_pda(AGENT_ASSET, index)
     return Instruction(
         PROGRAM_ID,
@@ -373,10 +445,10 @@ def ix_close_wallet_ata(index, mint, rent_receiver):
             am(wallet),
             am(AGENT_ASSET),
             am(mint),
-            am(ata(wallet, mint), writable=True),
+            am(ata(wallet, mint, token_program), writable=True),
             am(rent_receiver, writable=True),
             am(ASSOCIATED_TOKEN_PROGRAM),
-            am(TOKEN_PROGRAM),
+            am(token_program),
         ],
     )
 
@@ -454,10 +526,75 @@ def ix_execute_cpi_checked_mock_swap(amount_in, max_input, amount_out, min_outpu
     )
 
 
+def ix_execute_cpi_checked_noop(min_wallet_lamports, target_program=MOCK_AMM_PROGRAM, wallet_writable=False):
+    wallet = wallet_pda(AGENT_ASSET, 0)
+    target_data = bytes([0])
+    data = bytes([TAG_EXECUTE_CPI_CHECKED]) + u16(0) + bytes([0, 0]) + u16(len(target_data)) + target_data
+    data += bytes([1, 0, 0]) + u64(min_wallet_lamports)
+    return Instruction(
+        PROGRAM_ID,
+        data,
+        [
+            am(INITIALIZER.pubkey(), True),
+            am(global_config_pda()),
+            am(vault_config_pda(AGENT_ASSET)),
+            am(wallet, writable=wallet_writable),
+            am(AGENT_ASSET),
+            am(target_program),
+        ],
+    )
+
+
+def ix_execute_cpi_checked_missing_post_check():
+    wallet = wallet_pda(AGENT_ASSET, 0)
+    target_data = bytes([0])
+    data = bytes([TAG_EXECUTE_CPI_CHECKED]) + u16(0) + bytes([0, 0]) + u16(len(target_data)) + target_data
+    data += bytes([0])
+    return Instruction(
+        PROGRAM_ID,
+        data,
+        [
+            am(INITIALIZER.pubkey(), True),
+            am(global_config_pda()),
+            am(vault_config_pda(AGENT_ASSET)),
+            am(wallet),
+            am(AGENT_ASSET),
+            am(MOCK_AMM_PROGRAM),
+        ],
+    )
+
+
 def token_mint_data(decimals=6):
     data = bytearray(TOKEN_MINT_LEN)
     data[44] = decimals
     data[45] = 1
+    return bytes(data)
+
+
+def token_2022_transfer_fee_mint_data(decimals=6, maximum_fee=1_000, basis_points=100):
+    data = bytearray(166 + 4 + 108)
+    data[44] = decimals
+    data[45] = 1
+    data[165] = 1
+    data[166:168] = (1).to_bytes(2, "little")
+    data[168:170] = (108).to_bytes(2, "little")
+    payload = 170
+    data[payload + 72 : payload + 80] = u64(0)
+    data[payload + 80 : payload + 88] = u64(maximum_fee)
+    data[payload + 88 : payload + 90] = basis_points.to_bytes(2, "little")
+    data[payload + 90 : payload + 98] = u64(0)
+    data[payload + 98 : payload + 106] = u64(maximum_fee)
+    data[payload + 106 : payload + 108] = basis_points.to_bytes(2, "little")
+    return bytes(data)
+
+
+def token_2022_unsupported_mint_data(decimals=6):
+    data = bytearray(166 + 4 + TOKEN_2022_MINT_CLOSE_AUTHORITY_LEN)
+    data[44] = decimals
+    data[45] = 1
+    data[165] = 1
+    data[166:168] = TOKEN_2022_EXTENSION_MINT_CLOSE_AUTHORITY.to_bytes(2, "little")
+    data[168:170] = TOKEN_2022_MINT_CLOSE_AUTHORITY_LEN.to_bytes(2, "little")
     return bytes(data)
 
 
@@ -467,6 +604,16 @@ def token_account_data(mint, authority, amount):
     data[32:64] = bytes(authority)
     data[64:72] = u64(amount)
     data[108] = 1
+    return bytes(data)
+
+
+def token_2022_account_data_with_withheld_fee(mint, authority, amount, withheld_amount=0):
+    data = bytearray(166 + 4 + 8)
+    data[0:165] = token_account_data(mint, authority, amount)
+    data[165] = 2
+    data[166:168] = (2).to_bytes(2, "little")
+    data[168:170] = (8).to_bytes(2, "little")
+    data[170:178] = u64(withheld_amount)
     return bytes(data)
 
 
@@ -514,6 +661,10 @@ def write_fixtures():
     transfer_source = ata(wallet0, MINT_TRANSFER)
     swap_input = ata(wallet0, MINT_SWAP_IN)
     swap_pool_output = ata(wallet0, MINT_SWAP_OUT)
+    transfer_2022_source = ata(wallet0, MINT_2022_TRANSFER, TOKEN_2022_PROGRAM)
+    fee_2022_source = ata(wallet0, MINT_2022_FEE, TOKEN_2022_PROGRAM)
+    withheld_2022_wallet_ata = ata(wallet0, MINT_2022_WITHHELD, TOKEN_2022_PROGRAM)
+    high_fee_2022_source = ata(wallet0, MINT_2022_HIGH_FEE, TOKEN_2022_PROGRAM)
 
     fixtures = [
         ("agent-asset.json", AGENT_ASSET, 1_000_000, METAPLEX_CORE_PROGRAM, core_asset_data()),
@@ -521,6 +672,40 @@ def write_fixtures():
     ]
     for idx, mint in enumerate([MINT_CREATE_ATA, MINT_TRANSFER, MINT_SWAP_IN, MINT_SWAP_OUT], start=1):
         fixtures.append((f"mint-{idx}.json", mint, 1_000_000, TOKEN_PROGRAM, token_mint_data(6)))
+    fixtures.extend(
+        [
+            ("mint-2022-create.json", MINT_2022_CREATE, 1_000_000, TOKEN_2022_PROGRAM, token_mint_data(6)),
+            ("mint-2022-transfer.json", MINT_2022_TRANSFER, 1_000_000, TOKEN_2022_PROGRAM, token_mint_data(6)),
+            (
+                "mint-2022-fee.json",
+                MINT_2022_FEE,
+                1_000_000,
+                TOKEN_2022_PROGRAM,
+                token_2022_transfer_fee_mint_data(6, 1_000, 100),
+            ),
+            (
+                "mint-2022-unsupported.json",
+                MINT_2022_UNSUPPORTED,
+                1_000_000,
+                TOKEN_2022_PROGRAM,
+                token_2022_unsupported_mint_data(6),
+            ),
+            (
+                "mint-2022-withheld.json",
+                MINT_2022_WITHHELD,
+                1_000_000,
+                TOKEN_2022_PROGRAM,
+                token_2022_transfer_fee_mint_data(6, 1_000, 100),
+            ),
+            (
+                "mint-2022-high-fee.json",
+                MINT_2022_HIGH_FEE,
+                1_000_000,
+                TOKEN_2022_PROGRAM,
+                token_2022_transfer_fee_mint_data(6, 1_000, 10_000),
+            ),
+        ]
+    )
     fixtures.extend(
         [
             (
@@ -565,6 +750,55 @@ def write_fixtures():
                 TOKEN_PROGRAM,
                 token_account_data(MINT_SWAP_OUT, POOL_AUTHORITY, 0),
             ),
+            (
+                "transfer-2022-source.json",
+                transfer_2022_source,
+                2_039_280,
+                TOKEN_2022_PROGRAM,
+                token_account_data(MINT_2022_TRANSFER, wallet0, 100),
+            ),
+            (
+                "transfer-2022-destination.json",
+                DEST_2022_TRANSFER,
+                2_039_280,
+                TOKEN_2022_PROGRAM,
+                token_account_data(MINT_2022_TRANSFER, RECIPIENT, 0),
+            ),
+            (
+                "fee-2022-source.json",
+                fee_2022_source,
+                2_500_000,
+                TOKEN_2022_PROGRAM,
+                token_2022_account_data_with_withheld_fee(MINT_2022_FEE, wallet0, 1_000, 0),
+            ),
+            (
+                "fee-2022-destination.json",
+                DEST_2022_FEE,
+                2_500_000,
+                TOKEN_2022_PROGRAM,
+                token_2022_account_data_with_withheld_fee(MINT_2022_FEE, RECIPIENT, 0, 0),
+            ),
+            (
+                "withheld-2022-wallet-ata.json",
+                withheld_2022_wallet_ata,
+                2_500_000,
+                TOKEN_2022_PROGRAM,
+                token_2022_account_data_with_withheld_fee(MINT_2022_WITHHELD, wallet0, 0, 1),
+            ),
+            (
+                "high-fee-2022-source.json",
+                high_fee_2022_source,
+                2_500_000,
+                TOKEN_2022_PROGRAM,
+                token_2022_account_data_with_withheld_fee(MINT_2022_HIGH_FEE, wallet0, 1_000, 0),
+            ),
+            (
+                "high-fee-2022-destination.json",
+                DEST_2022_HIGH_FEE,
+                2_500_000,
+                TOKEN_2022_PROGRAM,
+                token_2022_account_data_with_withheld_fee(MINT_2022_HIGH_FEE, RECIPIENT, 0, 0),
+            ),
         ]
     )
     for name, pubkey, lamports, owner, data in fixtures:
@@ -605,6 +839,13 @@ def token_amount(pubkey):
     if account is None:
         raise AssertionError(f"missing token account {pubkey}")
     return int.from_bytes(account["data"][64:72], "little")
+
+
+def wallet_label(pubkey):
+    account = get_account(pubkey)
+    if account is None:
+        raise AssertionError(f"missing wallet account {pubkey}")
+    return account["data"][14:30].rstrip(b"\0").decode()
 
 
 def require(condition, message):
@@ -658,13 +899,36 @@ def run_e2e():
         request_airdrop(INITIALIZER.pubkey(), 20_000_000_000)
         request_airdrop(FEE_TREASURY, 1_000_000)
         request_airdrop(RECIPIENT, 1_000_000)
+        request_airdrop(FUNDER.pubkey(), 1_000_000_000)
 
         print("localnet: initialize global config")
+        expect_ixs_failure(
+            [ix_initialize_global_config(signer=FUNDER.pubkey())],
+            "reject wrong global config initializer",
+            signers=[INITIALIZER, FUNDER],
+        )
+        expect_ixs_failure(
+            [ix_initialize_global_config(collection=RECIPIENT)],
+            "reject wrong global config collection",
+        )
+        expect_ixs_failure([ix_initialize_global_config(0)], "reject bad global config fee")
+        require(get_account(global_config_pda()) is None, "bad global config fee created account")
         send_ixs([ix_initialize_global_config()])
         require(get_account(global_config_pda()) is not None, "global config was not created")
+        expect_ixs_failure([ix_initialize_global_config()], "reject duplicate global config init")
 
         print("localnet: init vault and create wallets")
+        expect_ixs_failure(
+            [ix_init_vault_config(agent_account, holder=FUNDER.pubkey())],
+            "reject non-holder vault init",
+            signers=[INITIALIZER, FUNDER],
+        )
+        expect_ixs_failure(
+            [ix_init_vault_config(agent_account, fee_treasury=RECIPIENT)],
+            "reject wrong vault fee treasury account",
+        )
         send_ixs([ix_init_vault_config(agent_account)])
+        expect_ixs_failure([ix_init_vault_config(agent_account)], "reject duplicate vault activation")
         send_ixs([ix_create_wallet(0, "treasury")])
         send_ixs([ix_create_wallet(1, "ops")])
         send_ixs([ix_update_wallet_label(0, "trading")])
@@ -673,18 +937,34 @@ def run_e2e():
         wallet1 = wallet_pda(AGENT_ASSET, 1)
         require(get_account(wallet0) is not None, "wallet #0 was not created")
         require(get_account(wallet1) is not None, "wallet #1 was not created")
+        require(wallet_label(wallet0) == "trading", "wallet label was not updated")
 
         print("localnet: SOL deposit, withdraw, transfer, close")
         send_ixs([ix_deposit_sol(0, 3_000_000)])
+        send_ixs(
+            [ix_deposit_sol(0, 123_456, FUNDER.pubkey())],
+            signers=[INITIALIZER, FUNDER],
+        )
+        print("localnet: permissionless deposit")
         wallet0_after_deposit = get_balance(wallet0)
+        expect_ixs_failure([ix_withdraw_sol(0, RECIPIENT, wallet0_after_deposit)], "reject withdraw below rent")
+        expect_ixs_failure([ix_transfer_sol(0, 1, wallet0_after_deposit)], "reject transfer below rent")
+        expect_ixs_failure([ix_close_wallet(0, RECIPIENT)], "reject close funded wallet")
         send_ixs([ix_withdraw_sol(0, RECIPIENT, 500_000)])
         send_ixs([ix_transfer_sol(0, 1, 400_000)])
         send_ixs([ix_withdraw_sol(1, RECIPIENT, 400_000)])
         send_ixs([ix_close_wallet(1, RECIPIENT)])
+        send_ixs([ix_reopen_wallet_for_recovery(1, "recovery")])
+        require(get_account(wallet1) is not None, "wallet #1 was not reopened for recovery")
+        expect_ixs_failure([ix_deposit_sol(1, 1)], "reject deposit into recovery-only wallet")
         require(get_balance(wallet0) < wallet0_after_deposit, "wallet #0 SOL flow did not move lamports")
 
         print("localnet: ATA create and close")
         created_ata = ata(wallet0, MINT_CREATE_ATA)
+        expect_ixs_failure(
+            [ix_create_wallet_ata(0, MINT_CREATE_ATA, TOKEN_PROGRAM, 1)],
+            "reject token program kind mismatch",
+        )
         send_ixs([ix_create_wallet_ata(0, MINT_CREATE_ATA)])
         require(get_account(created_ata) is not None, "wallet ATA was not created")
         send_ixs([ix_close_wallet_ata(0, MINT_CREATE_ATA, RECIPIENT)])
@@ -692,19 +972,134 @@ def run_e2e():
 
         print("localnet: SPL transfer")
         transfer_source = ata(wallet0, MINT_TRANSFER)
+        expect_ixs_failure(
+            [ix_transfer_spl(0, MINT_TRANSFER, transfer_source, TRANSFER_DEST, 1, decimals=5)],
+            "reject Tokenkeg decimals mismatch",
+        )
+        expect_ixs_failure(
+            [ix_transfer_spl(0, MINT_TRANSFER, transfer_source, TRANSFER_DEST, 1, expected_fee=1)],
+            "reject Tokenkeg nonzero expected fee",
+        )
         send_ixs([ix_transfer_spl(0, MINT_TRANSFER, transfer_source, TRANSFER_DEST, 250)])
         require(token_amount(transfer_source) == 750, "SPL source amount mismatch")
         require(token_amount(TRANSFER_DEST) == 250, "SPL destination amount mismatch")
+        expect_ixs_failure([ix_close_wallet_ata(0, MINT_TRANSFER, RECIPIENT)], "reject closing non-empty Tokenkeg ATA")
+
+        print("localnet: Token-2022 ATA and transfer")
+        created_2022_ata = ata(wallet0, MINT_2022_CREATE, TOKEN_2022_PROGRAM)
+        expect_ixs_failure(
+            [ix_create_wallet_ata(0, MINT_2022_UNSUPPORTED, TOKEN_2022_PROGRAM, 1)],
+            "reject unsupported Token-2022 extension",
+            expected_custom_error=ERR_UNSUPPORTED_TOKEN_EXTENSION,
+        )
+        send_ixs([ix_create_wallet_ata(0, MINT_2022_CREATE, TOKEN_2022_PROGRAM, 1)])
+        require(get_account(created_2022_ata) is not None, "Token-2022 wallet ATA was not created")
+        send_ixs([ix_close_wallet_ata(0, MINT_2022_CREATE, RECIPIENT, TOKEN_2022_PROGRAM)])
+        require(get_account(created_2022_ata) is None, "Token-2022 wallet ATA was not closed")
+
+        transfer_2022_source = ata(wallet0, MINT_2022_TRANSFER, TOKEN_2022_PROGRAM)
+        send_ixs(
+            [
+                ix_transfer_spl(
+                    0,
+                    MINT_2022_TRANSFER,
+                    transfer_2022_source,
+                    DEST_2022_TRANSFER,
+                    25,
+                    token_program=TOKEN_2022_PROGRAM,
+                )
+            ]
+        )
+        require(token_amount(transfer_2022_source) == 75, "Token-2022 source amount mismatch")
+        require(token_amount(DEST_2022_TRANSFER) == 25, "Token-2022 destination amount mismatch")
+
+        fee_2022_source = ata(wallet0, MINT_2022_FEE, TOKEN_2022_PROGRAM)
+        expect_ixs_failure(
+            [
+                ix_transfer_spl(
+                    0,
+                    MINT_2022_FEE,
+                    fee_2022_source,
+                    DEST_2022_FEE,
+                    1_000,
+                    token_program=TOKEN_2022_PROGRAM,
+                    expected_fee=0,
+                )
+            ],
+            "reject Token-2022 expected fee mismatch",
+        )
+        require(token_amount(fee_2022_source) == 1_000, "Token-2022 fee source mutated after rejected tx")
+        require(token_amount(DEST_2022_FEE) == 0, "Token-2022 fee destination mutated after rejected tx")
+        send_ixs(
+            [
+                ix_transfer_spl(
+                    0,
+                    MINT_2022_FEE,
+                    fee_2022_source,
+                    DEST_2022_FEE,
+                    1_000,
+                    token_program=TOKEN_2022_PROGRAM,
+                    expected_fee=10,
+                )
+            ]
+        )
+        require(token_amount(fee_2022_source) == 0, "Token-2022 fee source amount mismatch")
+        require(token_amount(DEST_2022_FEE) == 990, "Token-2022 fee destination amount mismatch")
+        expect_ixs_failure(
+            [ix_close_wallet_ata(0, MINT_2022_WITHHELD, RECIPIENT, TOKEN_2022_PROGRAM)],
+            "reject closing Token-2022 ATA with withheld fee",
+        )
+
+        print("localnet: Token-2022 high fee transfer")
+        high_fee_2022_source = ata(wallet0, MINT_2022_HIGH_FEE, TOKEN_2022_PROGRAM)
+        send_ixs(
+            [
+                ix_transfer_spl(
+                    0,
+                    MINT_2022_HIGH_FEE,
+                    high_fee_2022_source,
+                    DEST_2022_HIGH_FEE,
+                    1_000,
+                    token_program=TOKEN_2022_PROGRAM,
+                    expected_fee=1_000,
+                )
+            ]
+        )
+        require(token_amount(high_fee_2022_source) == 0, "Token-2022 high fee source amount mismatch")
+        require(token_amount(DEST_2022_HIGH_FEE) == 0, "Token-2022 high fee destination amount mismatch")
 
         print("localnet: WSOL wrap and unwrap")
         wsol_ata = ata(wallet0, NATIVE_MINT)
+        expect_ixs_failure([ix_wrap_sol(1, 1)], "reject recovery-only WSOL wrap")
         send_ixs([ix_create_wallet_ata(0, NATIVE_MINT)])
         send_ixs([ix_wrap_sol(0, 600_000), ix_sync_native(wsol_ata)])
         require(token_amount(wsol_ata) == 600_000, "WSOL amount mismatch after wrap")
+        expect_ixs_failure([ix_close_wallet_ata(0, NATIVE_MINT, RECIPIENT)], "reject native WSOL close_wallet_ata")
         send_ixs([ix_unwrap_sol(0)])
         require(get_account(wsol_ata) is None, "WSOL ATA was not closed by unwrap")
 
+        print("localnet: checked CPI noop")
+        expect_ixs_failure([ix_execute_cpi_checked_missing_post_check()], "reject checked CPI without post-check")
+        expect_ixs_failure(
+            [ix_execute_cpi_checked_noop(get_balance(wallet0), target_program=TOKEN_PROGRAM)],
+            "reject denied checked CPI target",
+            expected_custom_error=ERR_INVALID_CPI_TARGET,
+        )
+        expect_ixs_failure(
+            [ix_execute_cpi_checked_noop(get_balance(wallet0), wallet_writable=True)],
+            "reject writable wallet in checked CPI",
+        )
+        send_ixs([ix_execute_cpi_checked_noop(get_balance(wallet0))])
+
         print("localnet: checked CPI mock swap")
+        expect_ixs_failure(
+            [ix_execute_cpi_checked_mock_swap(100, 100, 40, 41)],
+            "reject checked CPI min output",
+        )
+        require(token_amount(ata(wallet0, MINT_SWAP_IN)) == 1_000, "swap input mutated after rejected tx")
+        require(token_amount(POOL_INPUT) == 0, "pool input mutated after rejected tx")
+        require(token_amount(ata(wallet0, MINT_SWAP_OUT)) == 500, "pool output mutated after rejected tx")
+        require(token_amount(SWAP_USER_OUTPUT) == 0, "swap output mutated after rejected tx")
         send_ixs([ix_execute_cpi_checked_mock_swap(100, 100, 40, 40)])
         require(token_amount(ata(wallet0, MINT_SWAP_IN)) == 900, "swap input amount mismatch")
         require(token_amount(POOL_INPUT) == 100, "pool input amount mismatch")

@@ -33,7 +33,7 @@ use crate::{
         unpack_vault_config, unpack_wallet, AgentWallet, GlobalConfig, VaultConfig,
         GLOBAL_CONFIG_LEN, VAULT_CONFIG_LEN, WALLET_LEN,
     },
-    token_state::TransferFee,
+    token_state::{TransferFee, MAX_FEE_BASIS_POINTS},
 };
 
 fn any_key() -> [u8; 32] {
@@ -405,8 +405,8 @@ fn execute_cpi_plan_requires_at_least_one_economic_post_check() {
 
 #[kani::proof]
 fn token_transfer_fee_never_exceeds_amount_or_configured_max() {
-    let transfer_fee_basis_points = kani::any::<u8>() as u16;
-    kani::assume(transfer_fee_basis_points <= 100);
+    let transfer_fee_basis_points = kani::any::<u16>();
+    kani::assume(transfer_fee_basis_points <= MAX_FEE_BASIS_POINTS);
     let maximum_fee = kani::any::<u16>() as u64;
     let amount = kani::any::<u16>() as u64;
     let fee_config = TransferFee {
@@ -415,6 +415,29 @@ fn token_transfer_fee_never_exceeds_amount_or_configured_max() {
         transfer_fee_basis_points,
     };
 
+    let fee = match fee_config.calculate_fee(amount) {
+        Some(fee) => fee,
+        None => unreachable!(),
+    };
+    assert!(fee <= amount);
+    assert!(fee <= maximum_fee);
+}
+
+#[kani::proof]
+fn token_transfer_fee_handles_u64_extreme_values() {
+    assert_fee_bounds(u64::MAX, u64::MAX, MAX_FEE_BASIS_POINTS);
+    assert_fee_bounds(u64::MAX, 42, MAX_FEE_BASIS_POINTS);
+    assert_fee_bounds(u64::MAX, u64::MAX, MAX_FEE_BASIS_POINTS - 1);
+    assert_fee_bounds(u64::MAX - 1, u64::MAX, 1);
+    assert_fee_bounds(0, u64::MAX, MAX_FEE_BASIS_POINTS);
+}
+
+fn assert_fee_bounds(amount: u64, maximum_fee: u64, transfer_fee_basis_points: u16) {
+    let fee_config = TransferFee {
+        epoch: 0,
+        maximum_fee,
+        transfer_fee_basis_points,
+    };
     let fee = match fee_config.calculate_fee(amount) {
         Some(fee) => fee,
         None => unreachable!(),

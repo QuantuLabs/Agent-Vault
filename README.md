@@ -63,9 +63,10 @@ instruction therefore requires explicit post-checks, rejects direct Token/ATA an
 loader targets, keeps the wallet account readonly, and enforces custody checks for
 writable wallet-controlled token accounts.
 
-Mainnet clients must fail closed unless the canonical deployment, global config,
-ProgramData hash, and upgrade authority policy all verify against a published
-release manifest.
+The intended SDK/mainnet client behavior is fail-closed unless the canonical
+deployment, global config, ProgramData hash, and upgrade authority policy all
+verify against a published release manifest. SDK integration is not implemented
+in this repository yet.
 
 ## Release Metadata
 

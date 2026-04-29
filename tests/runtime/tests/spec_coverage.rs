@@ -20,6 +20,7 @@ const COVERAGE: &[CoverageRow] = &[
         runtime_tests: &[
             "protected_ops_follow_live_core_asset_owner_and_collection",
             "init_vault_config_rejects_malformed_registry_agent_account",
+            "cross_agent_wallet_substitution_fails_on_protected_wallet_ops",
         ],
         formal_harnesses: &["core_asset_parser_uses_spec_offsets"],
     },
@@ -37,7 +38,9 @@ const COVERAGE: &[CoverageRow] = &[
         requirement: "Global config is initialized once, immutable, and matches manifest constants.",
         runtime_tests: &[
             "initialize_global_config_is_immutable_once_created",
+            "rejects_non_manifest_activation_fee",
             "rejects_non_manifest_global_config_fields_before_create",
+            "global_config_init_handles_dusted_pdas_and_rejects_squatters",
             "config_loads_reject_valid_data_at_wrong_pda_addresses",
         ],
         formal_harnesses: &[
@@ -60,11 +63,13 @@ const COVERAGE: &[CoverageRow] = &[
         runtime_tests: &[
             "init_create_deposit_and_withdraw_sol_flow",
             "dusted_system_owned_wallet_pda_can_be_created_and_reopened",
+            "update_wallet_label_rejects_wrong_index_and_recovery_wallets",
         ],
         formal_harnesses: &[
             "vault_config_pack_unpack_roundtrip_with_reserved_v0_flags",
             "vault_config_unpack_rejects_nonzero_reserved_flags",
             "agent_wallet_index_seed_is_u16_little_endian",
+            "optional_pubkey_none_requires_zero_bytes",
         ],
     },
     CoverageRow {
@@ -73,6 +78,7 @@ const COVERAGE: &[CoverageRow] = &[
         runtime_tests: &[
             "init_create_deposit_and_withdraw_sol_flow",
             "deposit_sol_is_permissionless_but_wallet_count_cannot_overflow",
+            "cross_agent_wallet_substitution_fails_on_deposit",
         ],
         formal_harnesses: &[
             "wallet_pack_unpack_roundtrip_for_valid_v0_flags",
@@ -93,7 +99,10 @@ const COVERAGE: &[CoverageRow] = &[
     CoverageRow {
         id: "spl-token.basic",
         requirement: "Wallet-owned ATAs support create, transfer_checked, and close for Tokenkeg.",
-        runtime_tests: &["tokenkeg_ata_transfer_and_close_paths_work"],
+        runtime_tests: &[
+            "tokenkeg_ata_transfer_and_close_paths_work",
+            "create_wallet_ata_rejects_token_program_kind_mismatch",
+        ],
         formal_harnesses: &["token_program_kind_encoding_is_stable"],
     },
     CoverageRow {
@@ -104,7 +113,10 @@ const COVERAGE: &[CoverageRow] = &[
             "token_2022_transfer_and_extension_rejections_are_checked",
             "execute_cpi_checked_token_2022_custody_equals_checks_extension_hash",
         ],
-        formal_harnesses: &["token_transfer_fee_never_exceeds_amount_or_configured_max"],
+        formal_harnesses: &[
+            "token_transfer_fee_never_exceeds_amount_or_configured_max",
+            "token_transfer_fee_handles_u64_extreme_values",
+        ],
     },
     CoverageRow {
         id: "wsol",
@@ -113,6 +125,8 @@ const COVERAGE: &[CoverageRow] = &[
             "wsol_wrap_and_unwrap_preserve_wallet_authority_and_rent",
             "wsol_wrap_rejects_malformed_wallet_atas",
             "unwrap_sol_rejects_malformed_wsol_ata",
+            "execute_cpi_checked_uses_redeemable_wsol_balance",
+            "close_wallet_ata_rejects_native_wsol_route",
         ],
         formal_harnesses: &["token_program_kind_encoding_is_stable"],
     },
@@ -124,11 +138,14 @@ const COVERAGE: &[CoverageRow] = &[
             "execute_cpi_checked_rejects_denied_target_programs",
             "execute_cpi_checked_rejects_writable_wallet_account",
             "execute_cpi_checked_rejects_missing_economic_post_check",
+            "execute_cpi_checked_rejects_non_executable_and_duplicate_remaining_accounts",
+            "execute_cpi_checked_rejects_malformed_token_balance_post_checks",
         ],
         formal_harnesses: &[
             "cpi_final_account_count_is_target_plus_wallet",
             "cpi_wallet_meta_is_readonly_signer_and_indexed_exactly",
             "execute_cpi_plan_requires_at_least_one_economic_post_check",
+            "validate_post_checks_rejects_trailing_bytes_after_declared_checks",
         ],
     },
     CoverageRow {
@@ -249,7 +266,24 @@ fn runtime_item_exists(name: &str) -> bool {
     if name == "scripts/localnet-e2e.py" {
         return LOCALNET_E2E_SCRIPT.contains("solana-test-validator")
             && LOCALNET_E2E_SCRIPT.contains("checked CPI mock swap")
+            && LOCALNET_E2E_SCRIPT.contains("checked CPI noop")
             && LOCALNET_E2E_SCRIPT.contains("WSOL wrap and unwrap")
+            && LOCALNET_E2E_SCRIPT.contains("Token-2022 ATA and transfer")
+            && LOCALNET_E2E_SCRIPT.contains("Token-2022 high fee transfer")
+            && LOCALNET_E2E_SCRIPT.contains("localnet negative:")
+            && LOCALNET_E2E_SCRIPT.contains("reject wrong global config initializer")
+            && LOCALNET_E2E_SCRIPT.contains("reject non-holder vault init")
+            && LOCALNET_E2E_SCRIPT.contains("reject withdraw below rent")
+            && LOCALNET_E2E_SCRIPT.contains("reject Tokenkeg decimals mismatch")
+            && LOCALNET_E2E_SCRIPT.contains("reject unsupported Token-2022 extension")
+            && LOCALNET_E2E_SCRIPT.contains("reject Token-2022 expected fee mismatch")
+            && LOCALNET_E2E_SCRIPT.contains("reject checked CPI min output")
+            && LOCALNET_E2E_SCRIPT.contains("reject checked CPI without post-check")
+            && LOCALNET_E2E_SCRIPT.contains("reject denied checked CPI target")
+            && LOCALNET_E2E_SCRIPT.contains("reject writable wallet in checked CPI")
+            && LOCALNET_E2E_SCRIPT.contains("reject native WSOL close_wallet_ata")
+            && LOCALNET_E2E_SCRIPT.contains("permissionless deposit")
+            && LOCALNET_E2E_SCRIPT.contains("reopened for recovery")
             && LOCALNET_E2E_SCRIPT.contains("SPL transfer");
     }
 

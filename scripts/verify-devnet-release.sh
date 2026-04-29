@@ -27,6 +27,43 @@ const fs = require('fs');
 
 const manifest = JSON.parse(fs.readFileSync('docs/RELEASE_MANIFEST.devnet.json', 'utf8'));
 const elf = fs.readFileSync('target/deploy/agent_vault.so');
+const expected = {
+  schema: 'agent-vault.release-manifest.v0',
+  name: 'Agent Vault',
+  cluster: 'devnet',
+  deploymentStatus: 'candidate-not-deployed',
+  programId: '36u7KMBuxjExvU6V2nfTX5SnNdYMGUupFiYouLzrgpfW',
+  globalConfigPda: 'Fv7ffwFuAZBiCZ6dpBPKEgYEGMXpSArmqvaqfH35Gbod',
+  initializer: '2KmHw8VbShuz9xfj3ecEjBM5nPKR5BcYHRDSFfK1286t',
+  registryProgram: '8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C',
+  collection: '6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA',
+  feeTreasury: 'EbHMHsePB6GYxjqgz9k2aC4NACx63vTeBXzXyHWFvqPK',
+  vaultActivationFeeLamports: 500000,
+};
+
+function assertEqual(name, actual, expectedValue) {
+  if (actual !== expectedValue) {
+    console.error(`Manifest ${name} mismatch: expected ${expectedValue}, got ${actual}`);
+    process.exit(1);
+  }
+}
+
+assertEqual('schema', manifest.schema, expected.schema);
+assertEqual('name', manifest.name, expected.name);
+assertEqual('cluster', manifest.cluster, expected.cluster);
+assertEqual('deploymentStatus', manifest.deploymentStatus, expected.deploymentStatus);
+assertEqual('program.id', manifest.program.id, expected.programId);
+assertEqual('program.globalConfigPda', manifest.program.globalConfigPda, expected.globalConfigPda);
+assertEqual('expectedGlobalConfig.initializer', manifest.expectedGlobalConfig.initializer, expected.initializer);
+assertEqual('expectedGlobalConfig.registryProgram', manifest.expectedGlobalConfig.registryProgram, expected.registryProgram);
+assertEqual('expectedGlobalConfig.collection', manifest.expectedGlobalConfig.collection, expected.collection);
+assertEqual('expectedGlobalConfig.feeTreasury', manifest.expectedGlobalConfig.feeTreasury, expected.feeTreasury);
+assertEqual(
+  'expectedGlobalConfig.vaultActivationFeeLamports',
+  manifest.expectedGlobalConfig.vaultActivationFeeLamports,
+  expected.vaultActivationFeeLamports,
+);
+
 const actualHash = crypto.createHash('sha256').update(elf).digest('hex');
 const expectedHash = manifest.program.sbfElfSha256;
 
