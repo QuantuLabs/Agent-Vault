@@ -31,7 +31,7 @@ const expected = {
   schema: 'agent-vault.release-manifest.v0',
   name: 'Agent Vault',
   cluster: 'devnet',
-  deploymentStatus: 'candidate-not-deployed',
+  deploymentStatus: 'deployed',
   programId: '36u7KMBuxjExvU6V2nfTX5SnNdYMGUupFiYouLzrgpfW',
   globalConfigPda: 'Fv7ffwFuAZBiCZ6dpBPKEgYEGMXpSArmqvaqfH35Gbod',
   initializer: '2KmHw8VbShuz9xfj3ecEjBM5nPKR5BcYHRDSFfK1286t',

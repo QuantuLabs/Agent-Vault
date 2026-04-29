@@ -3,7 +3,7 @@
   "name": "Agent Vault",
   "release": "devnet-v0.1.0-candidate",
   "cluster": "devnet",
-  "deploymentStatus": "candidate-not-deployed",
+  "deploymentStatus": "deployed",
   "sourceCommit": "be201e6cb507a34cc477e102ed7274412e89c687",
   "build": {
     "command": "NO_DNA=1 cargo build-sbf",
@@ -34,14 +34,14 @@
     "baseCollection": "6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA"
   },
   "deploymentVerification": {
-    "programDataAddress": null,
-    "programDataSha256": null,
-    "upgradeAuthority": null,
-    "upgradePolicy": "not-deployed"
+    "programDataAddress": "CQ71N7pQrmH6pGwZtcC9ibXGSA3otJEVvpmpdmtQ5Gsw",
+    "programDataSha256": "f91e7d5a435dfb741ad2bd04c3c0aa35c344199dde139299459b24f96cc0357b",
+    "upgradeAuthority": "2KmHw8VbShuz9xfj3ecEjBM5nPKR5BcYHRDSFfK1286t",
+    "upgradePolicy": "devnet-upgradeable"
   },
   "notes": [
-    "This manifest is a devnet candidate generated from the local SBF build before deployment.",
+    "This manifest tracks the devnet deployment of the current candidate artifact.",
     "sourceCommit identifies the public source commit used to reproduce the SBF artifact, not necessarily the manifest commit itself.",
-    "After deployment, programDataAddress, programDataSha256, upgradeAuthority, and upgradePolicy must be filled from onchain state."
+    "programDataSha256 is the SHA-256 hash of the dumped onchain SBF program bytes."
   ]
 }

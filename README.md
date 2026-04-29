@@ -9,7 +9,7 @@ This repository is a **work in progress**.
 
 - The program is unaudited.
 - There is no mainnet release.
-- The devnet artifact is a local candidate and is not deployed yet.
+- The devnet artifact is deployed as a candidate.
 - Do not use this with valuable assets.
 
 ## Current Deployment Facts
@@ -18,7 +18,7 @@ This repository is a **work in progress**.
 Program ID:        36u7KMBuxjExvU6V2nfTX5SnNdYMGUupFiYouLzrgpfW
 Devnet registry:  8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C
 Devnet collection: 6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA
-Devnet status:    candidate-not-deployed
+Devnet status:    deployed candidate
 ```
 
 The devnet candidate release metadata is tracked in
