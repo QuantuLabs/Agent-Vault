@@ -56,7 +56,14 @@ pub struct AgentWallet {
     pub label: [u8; LABEL_LEN],
 }
 
-impl AgentWallet {
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AgentWalletMeta {
+    pub bump: u8,
+    pub index: u16,
+    pub flags: u16,
+}
+
+impl AgentWalletMeta {
     #[inline(always)]
     pub fn is_active(&self) -> bool {
         self.flags & WALLET_FLAG_ACTIVE != 0
@@ -65,6 +72,27 @@ impl AgentWallet {
     #[inline(always)]
     pub fn is_recovery_only(&self) -> bool {
         self.flags & WALLET_FLAG_RECOVERY_ONLY != 0
+    }
+}
+
+impl AgentWallet {
+    #[inline(always)]
+    pub fn meta(&self) -> AgentWalletMeta {
+        AgentWalletMeta {
+            bump: self.bump,
+            index: self.index,
+            flags: self.flags,
+        }
+    }
+
+    #[inline(always)]
+    pub fn is_active(&self) -> bool {
+        self.meta().is_active()
+    }
+
+    #[inline(always)]
+    pub fn is_recovery_only(&self) -> bool {
+        self.meta().is_recovery_only()
     }
 }
 
@@ -139,6 +167,13 @@ pub fn unpack_global_config_after_header(
     })
 }
 
+pub fn read_global_config_collection_after_header(
+    data: &[u8],
+) -> Result<[u8; PUBKEY_LEN], ProgramError> {
+    validate_reserved_zero(data, GLOBAL_CONFIG_RESERVED_OFFSET, GLOBAL_CONFIG_LEN)?;
+    read_pubkey(data, GLOBAL_CONFIG_COLLECTION_OFFSET)
+}
+
 pub fn read_global_config_bump(data: &[u8]) -> Result<u8, ProgramError> {
     validate_header(data, GLOBAL_CONFIG_LEN, &DISCRIMINATOR_GLOBAL_CONFIG)
 }
@@ -165,11 +200,35 @@ pub fn unpack_vault_config_after_header(
     })
 }
 
+pub fn validate_vault_config_after_header(data: &[u8]) -> Result<(), ProgramError> {
+    let flags = read_u16_le(data, VAULT_CONFIG_FLAGS_OFFSET)?;
+    if flags != 0 {
+        return Err(AgentVaultError::InvalidAccountData.into());
+    }
+    validate_reserved_zero(data, VAULT_CONFIG_RESERVED_OFFSET, VAULT_CONFIG_LEN)
+}
+
 pub fn read_vault_config_bump(data: &[u8]) -> Result<u8, ProgramError> {
     validate_header(data, VAULT_CONFIG_LEN, &DISCRIMINATOR_VAULT_CONFIG)
 }
 
 pub fn unpack_wallet(data: &[u8]) -> Result<AgentWallet, ProgramError> {
+    let meta = unpack_wallet_meta(data)?;
+
+    let mut label = [0u8; LABEL_LEN];
+    label.copy_from_slice(
+        data.get(WALLET_LABEL_OFFSET..WALLET_LABEL_OFFSET + LABEL_LEN)
+            .ok_or(AgentVaultError::InvalidAccountData)?,
+    );
+    Ok(AgentWallet {
+        bump: meta.bump,
+        index: meta.index,
+        flags: meta.flags,
+        label,
+    })
+}
+
+pub fn unpack_wallet_meta(data: &[u8]) -> Result<AgentWalletMeta, ProgramError> {
     let bump = validate_header(data, WALLET_LEN, &DISCRIMINATOR_WALLET)?;
     let flags = read_u16_le(data, WALLET_FLAGS_OFFSET)?;
     let known_flags = WALLET_FLAG_ACTIVE | WALLET_FLAG_RECOVERY_ONLY;
@@ -183,16 +242,10 @@ pub fn unpack_wallet(data: &[u8]) -> Result<AgentWallet, ProgramError> {
     }
     validate_reserved_zero(data, WALLET_RESERVED_OFFSET, WALLET_LEN)?;
 
-    let mut label = [0u8; LABEL_LEN];
-    label.copy_from_slice(
-        data.get(WALLET_LABEL_OFFSET..WALLET_LABEL_OFFSET + LABEL_LEN)
-            .ok_or(AgentVaultError::InvalidAccountData)?,
-    );
-    Ok(AgentWallet {
+    Ok(AgentWalletMeta {
         bump,
         index: read_u16_le(data, WALLET_INDEX_OFFSET)?,
         flags,
-        label,
     })
 }
 

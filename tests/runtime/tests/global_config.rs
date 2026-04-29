@@ -67,6 +67,33 @@ const SHA256_EMPTY: [u8; 32] = [
     0x24, 0x27, 0xae, 0x41, 0xe4, 0x64, 0x9b, 0x93, 0x4c, 0xa4, 0x95, 0x99, 0x1b, 0x78, 0x52,
     0xb8, 0x55,
 ];
+const CU_REGRESSION_BPS: u64 = 1_000;
+const CU_BASELINE_INITIALIZE_GLOBAL_CONFIG: u64 = 5_407;
+const CU_BASELINE_INIT_VAULT_CONFIG: u64 = 15_010;
+const CU_BASELINE_CREATE_WALLET: u64 = 12_843;
+const CU_BASELINE_CREATE_WALLET_SECOND: u64 = 9_843;
+const CU_BASELINE_UPDATE_WALLET_LABEL: u64 = 6_577;
+const CU_BASELINE_DEPOSIT_SOL: u64 = 3_668;
+const CU_BASELINE_WITHDRAW_SOL: u64 = 2_583;
+const CU_BASELINE_TRANSFER_SOL: u64 = 4_495;
+const CU_BASELINE_CREATE_WALLET_ATA: u64 = 40_278;
+const CU_BASELINE_TRANSFER_SPL: u64 = 22_096;
+const CU_BASELINE_CLOSE_WALLET_ATA: u64 = 18_229;
+const CU_BASELINE_WRAP_SOL: u64 = 11_970;
+const CU_BASELINE_UNWRAP_SOL: u64 = 16_134;
+const CU_BASELINE_EXECUTE_CPI_CHECKED_MEMO: u64 = 28_918;
+const CU_BASELINE_EXECUTE_CPI_CHECKED_NOOP: u64 = 9_881;
+const CU_BASELINE_EXECUTE_CPI_CHECKED_MOCK_SWAP: u64 = 66_367;
+const CU_BASELINE_CLOSE_WALLET: u64 = 6_690;
+const CU_BASELINE_REOPEN_WALLET_FOR_RECOVERY: u64 = 14_629;
+
+fn assert_cu_regression(label: &str, actual: u64, baseline: u64) {
+    let allowed = baseline + ((baseline * CU_REGRESSION_BPS) + 9_999) / 10_000;
+    assert!(
+        actual <= allowed,
+        "{label} CU regression: actual={actual} baseline={baseline} allowed={allowed}"
+    );
+}
 
 fn program_so_path() -> PathBuf {
     let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -2364,7 +2391,11 @@ fn rent_snapshots_match_active_rent() {
 fn devnet_release_cost_report() {
     let mut svm = runtime();
     install_mock_amm(&mut svm);
-    initialize_global_config(&mut svm);
+    let initialize_global_config_cu = send_unsigned_tx(
+        &mut svm,
+        initialize_global_config_ix(EXPECTED_ACTIVATION_FEE_LAMPORTS),
+    )
+    .unwrap();
     svm.airdrop(&FEE_TREASURY, 1).unwrap();
 
     let agent_asset = Address::new_unique();
@@ -2488,21 +2519,12 @@ fn devnet_release_cost_report() {
         execute_cpi_checked_memo_ix(agent_asset, vault_config, wallet, min_wallet_lamports),
     )
     .unwrap();
-    assert!(
-        execute_cpi_memo_cu <= 32_000,
-        "execute_cpi_checked memo CU: {execute_cpi_memo_cu}"
-    );
-
     let min_wallet_lamports = svm.get_balance(&wallet).unwrap();
     let execute_cpi_noop_cu = send_unsigned_tx(
         &mut svm,
         execute_cpi_checked_noop_ix(agent_asset, vault_config, wallet, min_wallet_lamports),
     )
     .unwrap();
-    assert!(
-        execute_cpi_noop_cu <= 12_000,
-        "execute_cpi_checked noop baseline CU: {execute_cpi_noop_cu}"
-    );
 
     let input_mint = Address::new_unique();
     let output_mint = Address::new_unique();
@@ -2555,10 +2577,6 @@ fn devnet_release_cost_report() {
         ),
     )
     .unwrap();
-    assert!(
-        execute_cpi_mock_swap_cu <= 75_000,
-        "execute_cpi_checked mock swap CU: {execute_cpi_mock_swap_cu}"
-    );
     send_unsigned_tx(
         &mut svm,
         close_wallet_ata_ix(
@@ -2601,12 +2619,68 @@ fn devnet_release_cost_report() {
     )
     .unwrap();
 
+    assert_cu_regression("init_vault_config", init_vault_cu, CU_BASELINE_INIT_VAULT_CONFIG);
+    assert_cu_regression(
+        "initialize_global_config",
+        initialize_global_config_cu,
+        CU_BASELINE_INITIALIZE_GLOBAL_CONFIG,
+    );
+    assert_cu_regression("create_wallet", create_wallet_cu, CU_BASELINE_CREATE_WALLET);
+    assert_cu_regression(
+        "create_wallet_second",
+        create_wallet_1_cu,
+        CU_BASELINE_CREATE_WALLET_SECOND,
+    );
+    assert_cu_regression(
+        "update_wallet_label",
+        update_label_cu,
+        CU_BASELINE_UPDATE_WALLET_LABEL,
+    );
+    assert_cu_regression("deposit_sol", deposit_cu, CU_BASELINE_DEPOSIT_SOL);
+    assert_cu_regression("withdraw_sol", withdraw_cu, CU_BASELINE_WITHDRAW_SOL);
+    assert_cu_regression("transfer_sol", transfer_sol_cu, CU_BASELINE_TRANSFER_SOL);
+    assert_cu_regression(
+        "create_wallet_ata",
+        create_ata_cu,
+        CU_BASELINE_CREATE_WALLET_ATA,
+    );
+    assert_cu_regression("transfer_spl", transfer_spl_cu, CU_BASELINE_TRANSFER_SPL);
+    assert_cu_regression(
+        "close_wallet_ata",
+        close_ata_cu,
+        CU_BASELINE_CLOSE_WALLET_ATA,
+    );
+    assert_cu_regression("wrap_sol", wrap_sol_cu, CU_BASELINE_WRAP_SOL);
+    assert_cu_regression("unwrap_sol", unwrap_sol_cu, CU_BASELINE_UNWRAP_SOL);
+    assert_cu_regression(
+        "execute_cpi_checked_memo",
+        execute_cpi_memo_cu,
+        CU_BASELINE_EXECUTE_CPI_CHECKED_MEMO,
+    );
+    assert_cu_regression(
+        "execute_cpi_checked_noop_baseline",
+        execute_cpi_noop_cu,
+        CU_BASELINE_EXECUTE_CPI_CHECKED_NOOP,
+    );
+    assert_cu_regression(
+        "execute_cpi_checked_mock_swap",
+        execute_cpi_mock_swap_cu,
+        CU_BASELINE_EXECUTE_CPI_CHECKED_MOCK_SWAP,
+    );
+    assert_cu_regression("close_wallet", close_wallet_cu, CU_BASELINE_CLOSE_WALLET);
+    assert_cu_regression(
+        "reopen_wallet_for_recovery",
+        reopen_cu,
+        CU_BASELINE_REOPEN_WALLET_FOR_RECOVERY,
+    );
+
     println!("agent-vault devnet cost report");
     println!("activation_fee_lamports={EXPECTED_ACTIVATION_FEE_LAMPORTS}");
     println!("rent_global_config_160={}", rent_minimum(GLOBAL_CONFIG_LEN));
     println!("rent_vault_config_24={}", rent_minimum(VAULT_CONFIG_LEN));
     println!("rent_wallet_32={}", rent_minimum(WALLET_LEN));
     println!("rent_token_account_165={}", token_account_rent());
+    println!("cu_initialize_global_config={initialize_global_config_cu}");
     println!("cu_init_vault_config={init_vault_cu}");
     println!("cu_create_wallet={create_wallet_cu}");
     println!("cu_create_wallet_second={create_wallet_1_cu}");

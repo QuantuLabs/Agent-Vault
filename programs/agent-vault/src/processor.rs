@@ -25,9 +25,11 @@ use crate::{
     },
     state::{
         pack_global_config, pack_vault_config, pack_wallet, read_global_config_bump,
-        read_vault_config_bump, unpack_global_config_after_header,
-        unpack_vault_config_after_header, unpack_wallet, AgentWallet, GlobalConfig, VaultConfig,
-        GLOBAL_CONFIG_LEN, PUBKEY_LEN, VAULT_CONFIG_LEN, WALLET_LABEL_OFFSET, WALLET_LEN,
+        read_global_config_collection_after_header, read_vault_config_bump,
+        unpack_global_config_after_header, unpack_vault_config_after_header, unpack_wallet_meta,
+        validate_vault_config_after_header, AgentWallet, AgentWalletMeta, GlobalConfig,
+        VaultConfig, GLOBAL_CONFIG_LEN, PUBKEY_LEN, VAULT_CONFIG_LEN,
+        VAULT_CONFIG_WALLET_COUNT_OFFSET, WALLET_LABEL_OFFSET, WALLET_LEN,
     },
     token_state::{parse_mint, parse_token_account_for_mint, TokenAccount, TokenMint},
     validation::{
@@ -272,7 +274,9 @@ fn process_create_wallet(
         .checked_add(1)
         .ok_or(AgentVaultError::WalletCountOverflow)?;
     let mut vault_data = vault_config_account.try_borrow_mut()?;
-    pack_vault_config(&vault, &mut vault_data)
+    vault_data[VAULT_CONFIG_WALLET_COUNT_OFFSET..VAULT_CONFIG_WALLET_COUNT_OFFSET + 2]
+        .copy_from_slice(&vault.wallet_count.to_le_bytes());
+    Ok(())
 }
 
 #[inline(never)]
@@ -290,10 +294,10 @@ fn process_update_wallet_label(
 
     assert_signer(holder)?;
     assert_writable(wallet_account)?;
-    let global = load_global_config(program_id, global_config_account)?;
-    assert_core_asset_owner_and_collection(holder, agent_asset, &global.collection)?;
-    let _vault = load_vault_config(program_id, vault_config_account, agent_asset.address())?;
-    let wallet = load_wallet(program_id, wallet_account, agent_asset.address())?;
+    let collection = load_global_collection(program_id, global_config_account)?;
+    assert_core_asset_owner_and_collection(holder, agent_asset, &collection)?;
+    validate_vault_config_account(program_id, vault_config_account, agent_asset.address())?;
+    let wallet = load_wallet_meta(program_id, wallet_account, agent_asset.address())?;
     if !wallet.is_active() || wallet.index != ix.index {
         return Err(AgentVaultError::InvalidWallet.into());
     }
@@ -318,7 +322,7 @@ fn process_deposit_sol(
     assert_writable(funder)?;
     assert_writable(wallet_account)?;
     assert_system_program(system_program)?;
-    let wallet = load_wallet(program_id, wallet_account, agent_asset.address())?;
+    let wallet = load_wallet_meta(program_id, wallet_account, agent_asset.address())?;
     if wallet.is_recovery_only() {
         return Err(AgentVaultError::WalletRecoveryOnly.into());
     }
@@ -347,7 +351,7 @@ fn process_withdraw_sol(
     assert_rent_sysvar(rent_sysvar)?;
     let expected_collection = address_bytes(&EXPECTED_COLLECTION);
     assert_core_asset_owner_and_collection(holder, agent_asset, &expected_collection)?;
-    let wallet = load_wallet(program_id, wallet_account, agent_asset.address())?;
+    let wallet = load_wallet_meta(program_id, wallet_account, agent_asset.address())?;
     if wallet.index != ix.index {
         return Err(AgentVaultError::InvalidWallet.into());
     }
@@ -377,8 +381,8 @@ fn process_transfer_sol(
     assert_rent_sysvar(rent_sysvar)?;
     let expected_collection = address_bytes(&EXPECTED_COLLECTION);
     assert_core_asset_owner_and_collection(holder, agent_asset, &expected_collection)?;
-    let from_wallet = load_wallet(program_id, from_wallet_account, agent_asset.address())?;
-    let to_wallet = load_wallet(program_id, to_wallet_account, agent_asset.address())?;
+    let from_wallet = load_wallet_meta(program_id, from_wallet_account, agent_asset.address())?;
+    let to_wallet = load_wallet_meta(program_id, to_wallet_account, agent_asset.address())?;
     if from_wallet.index != ix.from_index || to_wallet.index != ix.to_index {
         return Err(AgentVaultError::InvalidWallet.into());
     }
@@ -409,10 +413,10 @@ fn process_close_wallet(program_id: &Address, accounts: &[AccountView]) -> Progr
     assert_writable(wallet_account)?;
     assert_writable(rent_receiver)?;
     assert_rent_sysvar(rent_sysvar)?;
-    let global = load_global_config(program_id, global_config_account)?;
-    assert_core_asset_owner_and_collection(holder, agent_asset, &global.collection)?;
+    let collection = load_global_collection(program_id, global_config_account)?;
+    assert_core_asset_owner_and_collection(holder, agent_asset, &collection)?;
     let vault = load_vault_config(program_id, vault_config_account, agent_asset.address())?;
-    let wallet = load_wallet(program_id, wallet_account, agent_asset.address())?;
+    let wallet = load_wallet_meta(program_id, wallet_account, agent_asset.address())?;
     if !wallet.is_active() && !wallet.is_recovery_only() {
         return Err(AgentVaultError::WalletInactive.into());
     }
@@ -424,10 +428,6 @@ fn process_close_wallet(program_id: &Address, accounts: &[AccountView]) -> Progr
         return Err(AgentVaultError::InsufficientLamports.into());
     }
 
-    {
-        let mut data = wallet_account.try_borrow_mut()?;
-        data.fill(0);
-    }
     checked_close_account(wallet_account, rent_receiver)
 }
 
@@ -449,8 +449,8 @@ fn process_reopen_wallet_for_recovery(
     assert_writable(holder)?;
     assert_writable(wallet_account)?;
     assert_system_program(system_program)?;
-    let global = load_global_config(program_id, global_config_account)?;
-    assert_core_asset_owner_and_collection(holder, agent_asset, &global.collection)?;
+    let collection = load_global_collection(program_id, global_config_account)?;
+    assert_core_asset_owner_and_collection(holder, agent_asset, &collection)?;
     let vault = load_vault_config(program_id, vault_config_account, agent_asset.address())?;
     if ix.index >= vault.wallet_count {
         return Err(AgentVaultError::InvalidWallet.into());
@@ -503,10 +503,10 @@ fn process_create_wallet_ata(
     assert_system_program(system_program)?;
     assert_token_program_kind(token_program, ix.token_program_kind)?;
 
-    let global = load_global_config(program_id, global_config_account)?;
-    assert_core_asset_owner_and_collection(holder, agent_asset, &global.collection)?;
-    let _vault = load_vault_config(program_id, vault_config_account, agent_asset.address())?;
-    let wallet = load_wallet(program_id, wallet_account, agent_asset.address())?;
+    let collection = load_global_collection(program_id, global_config_account)?;
+    assert_core_asset_owner_and_collection(holder, agent_asset, &collection)?;
+    validate_vault_config_account(program_id, vault_config_account, agent_asset.address())?;
+    let wallet = load_wallet_meta(program_id, wallet_account, agent_asset.address())?;
     if wallet.index != ix.index {
         return Err(AgentVaultError::InvalidWallet.into());
     }
@@ -561,10 +561,10 @@ fn process_transfer_spl(
     assert_token_program_any(token_program)?;
 
     let token_program_kind = token_program_kind_from_account(token_program)?;
-    let global = load_global_config(program_id, global_config_account)?;
-    assert_core_asset_owner_and_collection(holder, agent_asset, &global.collection)?;
-    let _vault = load_vault_config(program_id, vault_config_account, agent_asset.address())?;
-    let wallet = load_wallet(program_id, wallet_account, agent_asset.address())?;
+    let collection = load_global_collection(program_id, global_config_account)?;
+    assert_core_asset_owner_and_collection(holder, agent_asset, &collection)?;
+    validate_vault_config_account(program_id, vault_config_account, agent_asset.address())?;
+    let wallet = load_wallet_meta(program_id, wallet_account, agent_asset.address())?;
     if wallet.index != ix.index {
         return Err(AgentVaultError::InvalidWallet.into());
     }
@@ -676,10 +676,10 @@ fn process_wrap_sol(program_id: &Address, accounts: &[AccountView], ix: &WrapSol
     assert_token_program_kind(token_program, TokenProgramKind::Tokenkeg)?;
     assert_rent_sysvar(rent_sysvar)?;
 
-    let global = load_global_config(program_id, global_config_account)?;
-    assert_core_asset_owner_and_collection(holder, agent_asset, &global.collection)?;
-    let _vault = load_vault_config(program_id, vault_config_account, agent_asset.address())?;
-    let wallet = load_wallet(program_id, wallet_account, agent_asset.address())?;
+    let collection = load_global_collection(program_id, global_config_account)?;
+    assert_core_asset_owner_and_collection(holder, agent_asset, &collection)?;
+    validate_vault_config_account(program_id, vault_config_account, agent_asset.address())?;
+    let wallet = load_wallet_meta(program_id, wallet_account, agent_asset.address())?;
     if wallet.index != ix.index {
         return Err(AgentVaultError::InvalidWallet.into());
     }
@@ -717,10 +717,10 @@ fn process_unwrap_sol(
     assert_writable(wallet_account)?;
     assert_writable(wallet_wsol_ata)?;
     assert_token_program_kind(token_program, TokenProgramKind::Tokenkeg)?;
-    let global = load_global_config(program_id, global_config_account)?;
-    assert_core_asset_owner_and_collection(holder, agent_asset, &global.collection)?;
-    let _vault = load_vault_config(program_id, vault_config_account, agent_asset.address())?;
-    let wallet = load_wallet(program_id, wallet_account, agent_asset.address())?;
+    let collection = load_global_collection(program_id, global_config_account)?;
+    assert_core_asset_owner_and_collection(holder, agent_asset, &collection)?;
+    validate_vault_config_account(program_id, vault_config_account, agent_asset.address())?;
+    let wallet = load_wallet_meta(program_id, wallet_account, agent_asset.address())?;
     if wallet.index != ix.index {
         return Err(AgentVaultError::InvalidWallet.into());
     }
@@ -767,10 +767,10 @@ fn process_close_wallet_ata(
     assert_token_program_any(token_program)?;
 
     let token_program_kind = token_program_kind_from_account(token_program)?;
-    let global = load_global_config(program_id, global_config_account)?;
-    assert_core_asset_owner_and_collection(holder, agent_asset, &global.collection)?;
-    let _vault = load_vault_config(program_id, vault_config_account, agent_asset.address())?;
-    let wallet = load_wallet(program_id, wallet_account, agent_asset.address())?;
+    let collection = load_global_collection(program_id, global_config_account)?;
+    assert_core_asset_owner_and_collection(holder, agent_asset, &collection)?;
+    validate_vault_config_account(program_id, vault_config_account, agent_asset.address())?;
+    let wallet = load_wallet_meta(program_id, wallet_account, agent_asset.address())?;
     if wallet.index != ix.index {
         return Err(AgentVaultError::InvalidWallet.into());
     }
@@ -845,10 +845,10 @@ fn process_execute_cpi_checked(
         return Err(AgentVaultError::InvalidCpiTarget.into());
     }
 
-    let global = load_global_config(program_id, global_config_account)?;
-    assert_core_asset_owner_and_collection(holder, agent_asset, &global.collection)?;
-    let _vault = load_vault_config(program_id, vault_config_account, agent_asset.address())?;
-    let wallet = load_wallet(program_id, wallet_account, agent_asset.address())?;
+    let collection = load_global_collection(program_id, global_config_account)?;
+    assert_core_asset_owner_and_collection(holder, agent_asset, &collection)?;
+    validate_vault_config_account(program_id, vault_config_account, agent_asset.address())?;
+    let wallet = load_wallet_meta(program_id, wallet_account, agent_asset.address())?;
     if wallet.index != ix.index {
         return Err(AgentVaultError::InvalidWallet.into());
     }
@@ -933,7 +933,7 @@ struct CheckedCpiContext<'a, 'ix, 'data> {
     wallet_key: &'a [u8; PUBKEY_LEN],
     agent_asset: &'a Address,
     target_program: &'a AccountView,
-    wallet: &'a AgentWallet,
+    wallet: &'a AgentWalletMeta,
 }
 
 fn execute_checked_cpi_with_final_accounts<'a>(
@@ -1784,7 +1784,7 @@ fn invoke_token_transfer_checked(
     destination: &AccountView,
     wallet: &AccountView,
     agent_asset: &Address,
-    wallet_state: &AgentWallet,
+    wallet_state: &AgentWalletMeta,
     amount: u64,
     decimals: u8,
     expected_fee: u64,
@@ -1837,7 +1837,7 @@ fn invoke_token_close_account(
     destination: &AccountView,
     wallet: &AccountView,
     agent_asset: &Address,
-    wallet_state: &AgentWallet,
+    wallet_state: &AgentWalletMeta,
 ) -> ProgramResult {
     let index_seed = agent_wallet_index_seed(wallet_state.index);
     let bump_seed = [wallet_state.bump];
@@ -1878,6 +1878,17 @@ fn load_global_config(
     Ok(config)
 }
 
+fn load_global_collection(
+    program_id: &Address,
+    account: &AccountView,
+) -> Result<[u8; PUBKEY_LEN], ProgramError> {
+    assert_owned_by(account, program_id)?;
+    let data = account.try_borrow()?;
+    let bump = read_global_config_bump(&data)?;
+    validate_global_config_pda(account.address(), bump, program_id)?;
+    read_global_config_collection_after_header(&data)
+}
+
 fn load_vault_config(
     program_id: &Address,
     account: &AccountView,
@@ -1891,14 +1902,26 @@ fn load_vault_config(
     Ok(config)
 }
 
-fn load_wallet(
+fn validate_vault_config_account(
     program_id: &Address,
     account: &AccountView,
     agent_asset: &Address,
-) -> Result<AgentWallet, ProgramError> {
+) -> ProgramResult {
     assert_owned_by(account, program_id)?;
     let data = account.try_borrow()?;
-    let wallet = unpack_wallet(&data)?;
+    let bump = read_vault_config_bump(&data)?;
+    validate_vault_config_pda(account.address(), bump, program_id, agent_asset)?;
+    validate_vault_config_after_header(&data)
+}
+
+fn load_wallet_meta(
+    program_id: &Address,
+    account: &AccountView,
+    agent_asset: &Address,
+) -> Result<AgentWalletMeta, ProgramError> {
+    assert_owned_by(account, program_id)?;
+    let data = account.try_borrow()?;
+    let wallet = unpack_wallet_meta(&data)?;
     validate_agent_wallet_pda(
         account.address(),
         wallet.bump,
