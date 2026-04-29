@@ -1,5 +1,6 @@
 target/
 node_modules/
+sdk/agent-vault/dist/
 __pycache__/
 .DS_Store
 *.log

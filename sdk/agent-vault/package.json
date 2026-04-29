@@ -1,0 +1,58 @@
+{
+  "name": "agent-vault",
+  "version": "0.1.0",
+  "description": "TypeScript SDK for Agent Vault: 8004 identity creation and multi-wallet PDA management on Solana.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist/**/*",
+    "README.md",
+    "SPEC.md",
+    "package.json"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "tsx tests/pda.test.ts",
+    "check": "npm run build && npm run test"
+  },
+  "keywords": [
+    "solana",
+    "agent-vault",
+    "8004",
+    "agents",
+    "wallet",
+    "pda",
+    "defi",
+    "metaplex-core"
+  ],
+  "author": "Quantu Labs",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/QuantuLabs/Agent-Vault.git",
+    "directory": "sdk/agent-vault"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@solana/web3.js": "^1.95.0",
+    "8004-solana": "^0.8.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.6",
+    "tsx": "^4.7.0",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
