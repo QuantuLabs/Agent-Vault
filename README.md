@@ -100,25 +100,14 @@ The localnet e2e script requires `solana-test-validator` and Python `solders`.
 ```text
 programs/agent-vault   Pinocchio onchain program
 programs/mock-amm      test-only mock target used by checked-CPI runtime tests
-sdk/agent-vault        WIP TypeScript SDK package
 tests/runtime          LiteSVM runtime tests
 scripts                release verification helpers
 ```
 
 ## SDK
 
-The WIP public TypeScript SDK lives in [`sdk/agent-vault`](sdk/agent-vault).
-The npm package name is `agent-vault`.
-
-The SDK imports `8004-solana` for 8004 identity creation and exposes the Agent
-Vault surface through:
-
-```ts
-client.identities
-client.wallets
-```
-
-See [`sdk/agent-vault/SPEC.md`](sdk/agent-vault/SPEC.md) for the SDK spec.
+The WIP TypeScript SDK is maintained separately in the `agent-vault-sdk`
+workspace folder. Its npm package name is `agent-vault`.
 
 ## License
 
