@@ -18,6 +18,7 @@ fi
 
 NO_DNA=1 cargo test --offline --manifest-path tests/runtime/Cargo.toml -- --test-threads=1
 NO_DNA=1 cargo test --offline --manifest-path tests/runtime/Cargo.toml devnet_release_cost_report -- --nocapture --test-threads=1
+NO_DNA=1 scripts/localnet-e2e.py
 NO_DNA=1 ./scripts/verify-formal.sh
 
 node <<'NODE'

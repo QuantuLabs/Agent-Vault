@@ -78,21 +78,44 @@ pub const AGENT_REGISTRY_MAINNET_ID: Address = Address::new_from_array([
     115, 254, 155, 212, 220, 142, 184, 10, 96, 166, 39, 107, 205, 233, 133, 186, 134, 94, 137, 81,
     196, 110, 150, 62, 1, 188, 184, 198, 20, 135, 24, 131,
 ]);
+pub const AGENT_REGISTRY_LOCALNET_ID: Address = Address::new_from_array([
+    253, 23, 36, 56, 90, 160, 199, 91, 100, 251, 120, 205, 96, 47, 161, 217, 145, 253, 235, 247,
+    107, 19, 197, 142, 215, 2, 234, 200, 53, 233, 246, 24,
+]);
+
+#[cfg(all(feature = "mainnet", feature = "localnet"))]
+compile_error!("`mainnet` and `localnet` features are mutually exclusive");
 
 #[cfg(feature = "mainnet")]
 compile_error!("mainnet release constants must be finalized before building with `mainnet`");
 
-#[cfg(not(feature = "mainnet"))]
+#[cfg(feature = "localnet")]
+pub const EXPECTED_INITIALIZER: Address = Address::new_from_array([
+    138, 136, 227, 221, 116, 9, 241, 149, 253, 82, 219, 45, 60, 186, 93, 114, 202, 103, 9, 191, 29,
+    148, 18, 27, 243, 116, 136, 1, 180, 15, 111, 92,
+]);
+#[cfg(feature = "localnet")]
+pub const EXPECTED_COLLECTION: Address = Address::new_from_array([
+    237, 73, 40, 198, 40, 209, 194, 198, 234, 233, 3, 56, 144, 89, 149, 97, 41, 89, 39, 58, 92, 99,
+    249, 54, 54, 193, 70, 20, 172, 135, 55, 209,
+]);
+#[cfg(feature = "localnet")]
+pub const EXPECTED_FEE_TREASURY: Address = Address::new_from_array([
+    129, 57, 119, 14, 168, 125, 23, 95, 86, 163, 84, 102, 195, 76, 126, 204, 203, 141, 138, 145,
+    180, 238, 55, 162, 93, 246, 15, 91, 143, 201, 179, 148,
+]);
+
+#[cfg(all(not(feature = "mainnet"), not(feature = "localnet")))]
 pub const EXPECTED_INITIALIZER: Address = Address::new_from_array([
     19, 170, 56, 249, 183, 167, 202, 247, 46, 162, 199, 116, 239, 168, 220, 156, 232, 61, 169, 237,
     64, 134, 251, 103, 51, 129, 151, 239, 5, 181, 190, 57,
 ]);
-#[cfg(not(feature = "mainnet"))]
+#[cfg(all(not(feature = "mainnet"), not(feature = "localnet")))]
 pub const EXPECTED_COLLECTION: Address = Address::new_from_array([
     77, 58, 81, 151, 27, 212, 47, 66, 205, 172, 141, 99, 34, 10, 199, 181, 61, 194, 128, 143, 163,
     137, 213, 17, 64, 27, 150, 250, 16, 10, 189, 97,
 ]);
-#[cfg(not(feature = "mainnet"))]
+#[cfg(all(not(feature = "mainnet"), not(feature = "localnet")))]
 pub const EXPECTED_FEE_TREASURY: Address = Address::new_from_array([
     201, 240, 42, 20, 173, 37, 211, 9, 176, 102, 201, 19, 29, 146, 113, 127, 136, 66, 74, 209, 236,
     26, 124, 162, 37, 135, 91, 102, 154, 24, 32, 22,
@@ -100,7 +123,9 @@ pub const EXPECTED_FEE_TREASURY: Address = Address::new_from_array([
 
 #[cfg(feature = "mainnet")]
 pub const EXPECTED_REGISTRY_PROGRAM: Address = AGENT_REGISTRY_MAINNET_ID;
-#[cfg(not(feature = "mainnet"))]
+#[cfg(feature = "localnet")]
+pub const EXPECTED_REGISTRY_PROGRAM: Address = AGENT_REGISTRY_LOCALNET_ID;
+#[cfg(all(not(feature = "mainnet"), not(feature = "localnet")))]
 pub const EXPECTED_REGISTRY_PROGRAM: Address = AGENT_REGISTRY_DEVNET_ID;
 
 #[cfg(feature = "mainnet")]

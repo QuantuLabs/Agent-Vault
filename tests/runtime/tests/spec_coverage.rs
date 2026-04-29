@@ -11,6 +11,7 @@ const KANI_HARNESS_SOURCE: &str =
 const VERIFY_DEVNET_RELEASE_SCRIPT: &str =
     include_str!("../../../scripts/verify-devnet-release.sh");
 const VERIFY_FORMAL_SCRIPT: &str = include_str!("../../../scripts/verify-formal.sh");
+const LOCALNET_E2E_SCRIPT: &str = include_str!("../../../scripts/localnet-e2e.py");
 
 const COVERAGE: &[CoverageRow] = &[
     CoverageRow {
@@ -165,9 +166,10 @@ const COVERAGE: &[CoverageRow] = &[
     },
     CoverageRow {
         id: "release.verification",
-        requirement: "Release verification runs format, Clippy, unit, runtime, formal, SBF, and manifest hash checks.",
+        requirement: "Release verification runs format, Clippy, unit, runtime, localnet e2e, formal, SBF, and manifest hash checks.",
         runtime_tests: &[
             "scripts/verify-devnet-release.sh",
+            "scripts/localnet-e2e.py",
             "devnet_release_cost_report",
         ],
         formal_harnesses: &["scripts/verify-formal.sh"],
@@ -241,7 +243,14 @@ fn runtime_item_exists(name: &str) -> bool {
         return VERIFY_DEVNET_RELEASE_SCRIPT.contains("verify-formal.sh")
             && VERIFY_DEVNET_RELEASE_SCRIPT.contains("cargo clippy")
             && VERIFY_DEVNET_RELEASE_SCRIPT.contains("--test-threads=1")
+            && VERIFY_DEVNET_RELEASE_SCRIPT.contains("localnet-e2e.py")
             && VERIFY_DEVNET_RELEASE_SCRIPT.contains("devnet_release_cost_report");
+    }
+    if name == "scripts/localnet-e2e.py" {
+        return LOCALNET_E2E_SCRIPT.contains("solana-test-validator")
+            && LOCALNET_E2E_SCRIPT.contains("checked CPI mock swap")
+            && LOCALNET_E2E_SCRIPT.contains("WSOL wrap and unwrap")
+            && LOCALNET_E2E_SCRIPT.contains("SPL transfer");
     }
 
     RUNTIME_TEST_SOURCE.contains(&format!("fn {name}("))

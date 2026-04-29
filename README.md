@@ -78,6 +78,7 @@ NO_DNA=1 cargo clippy --offline --all-targets -- -D warnings
 NO_DNA=1 cargo test --offline
 NO_DNA=1 cargo build-sbf
 NO_DNA=1 cargo test --offline --manifest-path tests/runtime/Cargo.toml -- --test-threads=1
+NO_DNA=1 scripts/localnet-e2e.py
 NO_DNA=1 ./scripts/verify-formal.sh
 ```
 
@@ -88,8 +89,10 @@ NO_DNA=1 ./scripts/verify-devnet-release.sh
 ```
 
 The verification script runs formatting, Clippy with warnings denied, unit
-tests, SBF build, SBF stack-log checks, LiteSVM runtime tests, Kani harnesses,
-and release artifact hash/size checks.
+tests, SBF build, SBF stack-log checks, LiteSVM runtime tests, a localnet e2e
+validator run, Kani harnesses, and release artifact hash/size checks.
+
+The localnet e2e script requires `solana-test-validator` and Python `solders`.
 
 ## Repository Layout
 
