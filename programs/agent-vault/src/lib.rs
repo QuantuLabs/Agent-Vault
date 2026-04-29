@@ -1,7 +1,5 @@
 #![cfg_attr(not(test), no_std)]
 
-extern crate alloc;
-
 pub mod agent_account;
 pub mod constants;
 pub mod core_asset;

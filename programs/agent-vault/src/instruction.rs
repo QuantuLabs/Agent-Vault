@@ -415,7 +415,6 @@ fn parse_execute_cpi_checked(payload: &[u8]) -> Result<Instruction<'_>, ProgramE
         return Err(AgentVaultError::InvalidPostCheck.into());
     }
     let post_check_data = &payload[target_ix_end + 1..];
-    validate_post_checks(post_check_count, post_check_data)?;
 
     Ok(Instruction::ExecuteCpiChecked(ExecuteCpiChecked {
         index,
@@ -783,7 +782,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_execute_cpi_checked_without_economic_check() {
+    fn parses_execute_cpi_checked_and_defers_economic_validation() {
         let mut data = [0u8; 1 + 2 + 1 + 1 + 2 + 1 + 34];
         data[0] = TAG_EXECUTE_CPI_CHECKED;
         data[3] = 0;
@@ -794,10 +793,16 @@ mod tests {
         data[9] = 0;
         data[10..42].copy_from_slice(&[1u8; 32]);
 
-        assert!(matches!(
-            parse_instruction(&data),
-            Err(ProgramError::Custom(x)) if x == AgentVaultError::MissingEconomicPostCheck as u32
-        ));
+        match parse_instruction(&data).unwrap() {
+            Instruction::ExecuteCpiChecked(ix) => {
+                assert!(matches!(
+                    validate_post_checks(ix.post_check_count, ix.post_check_data),
+                    Err(ProgramError::Custom(x))
+                        if x == AgentVaultError::MissingEconomicPostCheck as u32
+                ));
+            }
+            _ => panic!("wrong instruction"),
+        }
     }
 
     #[test]

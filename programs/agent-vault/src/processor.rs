@@ -31,14 +31,13 @@ use crate::{
         VaultConfig, GLOBAL_CONFIG_LEN, PUBKEY_LEN, VAULT_CONFIG_LEN,
         VAULT_CONFIG_WALLET_COUNT_OFFSET, WALLET_LABEL_OFFSET, WALLET_LEN,
     },
-    token_state::{parse_mint, parse_token_account_for_mint, TokenAccount, TokenMint},
+    token_state::{parse_mint, parse_token_account_for_mint, TokenAccount, TOKEN_ACCOUNT_LEN},
     validation::{
         assert_associated_token_program, assert_clock_sysvar, assert_native_mint, assert_owned_by,
         assert_rent_sysvar, assert_signer, assert_system_program, assert_token_program_any,
         assert_uninitialized_pda, assert_writable,
     },
 };
-use alloc::vec::Vec;
 use pinocchio::{
     cpi::{invoke_signed, invoke_signed_with_slice, Seed, Signer},
     error::ProgramError,
@@ -46,6 +45,9 @@ use pinocchio::{
     sysvars::{clock::Clock, rent::Rent, Sysvar},
     AccountView, Address, ProgramResult,
 };
+
+const MAX_CPI_ACCOUNT_CAPACITY: usize = MAX_CPI_ACCOUNTS as usize;
+const MAX_FINAL_CPI_ACCOUNT_CAPACITY: usize = MAX_CPI_ACCOUNT_CAPACITY + 1;
 
 #[inline(never)]
 pub fn process_instruction(
@@ -885,7 +887,6 @@ fn process_execute_cpi_checked(
         );
     }
 
-    let remaining_metas = build_cpi_plan_metas(remaining_accounts)?;
     let protected = ProtectedAccounts {
         holder: address_bytes(holder.address()),
         global_config: address_bytes(global_config_account.address()),
@@ -893,25 +894,9 @@ fn process_execute_cpi_checked(
         agent_asset: address_bytes(agent_asset.address()),
         target_program: address_bytes(target_program.address()),
     };
-    validate_execute_cpi_plan(ix, &remaining_metas, &protected, &wallet_key)?;
+    validate_execute_cpi_remaining_accounts(ix, remaining_accounts, &protected, &wallet_key)?;
 
-    let final_count = ix.target_account_count as usize + 1;
-    let mut final_views: Vec<&AccountView> = Vec::new();
-    final_views
-        .try_reserve_exact(final_count)
-        .map_err(|_| AgentVaultError::AccountLimitExceeded)?;
-    let mut final_metas: Vec<InstructionAccount> = Vec::new();
-    final_metas
-        .try_reserve_exact(final_count)
-        .map_err(|_| AgentVaultError::AccountLimitExceeded)?;
-    build_final_cpi_accounts(
-        ix,
-        wallet_account,
-        remaining_accounts,
-        &mut final_views,
-        &mut final_metas,
-    )?;
-    execute_checked_cpi_with_final_accounts(
+    execute_checked_cpi_with_remaining_accounts(
         CheckedCpiContext {
             program_id,
             ix,
@@ -921,8 +906,7 @@ fn process_execute_cpi_checked(
             target_program,
             wallet: &wallet,
         },
-        &final_views[..final_count],
-        &final_metas[..final_count],
+        remaining_accounts,
     )
 }
 
@@ -936,6 +920,7 @@ struct CheckedCpiContext<'a, 'ix, 'data> {
     wallet: &'a AgentWalletMeta,
 }
 
+#[inline(never)]
 fn execute_checked_cpi_with_final_accounts<'a>(
     ctx: CheckedCpiContext<'a, '_, '_>,
     final_views: &[&'a AccountView],
@@ -944,8 +929,17 @@ fn execute_checked_cpi_with_final_accounts<'a>(
     let mut pre_values = [0u64; crate::constants::MAX_POST_CHECKS as usize];
     let mut custody_snapshots =
         [CustodySnapshot::EMPTY; crate::constants::MAX_POST_CHECKS as usize];
+    let mut token_coverage = WalletTokenPostCheckCoverage::EMPTY;
+    let mut token_coverage_loaded = false;
     snapshot_post_checks(ctx.ix, final_views, &mut pre_values, &mut custody_snapshots)?;
-    enforce_wallet_controlled_token_checks(ctx.ix, final_views, final_metas, ctx.wallet_key)?;
+    enforce_wallet_controlled_token_checks(
+        ctx.ix,
+        final_views,
+        final_metas,
+        ctx.wallet_key,
+        &mut token_coverage,
+        &mut token_coverage_loaded,
+    )?;
     enforce_writable_non_token_owner_checks(ctx.ix, final_views, final_metas)?;
 
     let index_seed = agent_wallet_index_seed(ctx.wallet.index);
@@ -972,8 +966,56 @@ fn execute_checked_cpi_with_final_accounts<'a>(
     if ctx.wallet_account.lamports() < rent_floor {
         return Err(AgentVaultError::RentFloorViolation.into());
     }
-    enforce_wallet_controlled_token_checks(ctx.ix, final_views, final_metas, ctx.wallet_key)?;
+    enforce_wallet_controlled_token_checks(
+        ctx.ix,
+        final_views,
+        final_metas,
+        ctx.wallet_key,
+        &mut token_coverage,
+        &mut token_coverage_loaded,
+    )?;
     evaluate_post_checks(ctx.ix, final_views, &pre_values, &custody_snapshots)
+}
+
+#[inline(never)]
+fn validate_execute_cpi_remaining_accounts(
+    ix: &crate::instruction::ExecuteCpiChecked<'_>,
+    remaining_accounts: &[AccountView],
+    protected: &ProtectedAccounts,
+    wallet_key: &[u8; PUBKEY_LEN],
+) -> ProgramResult {
+    let mut remaining_metas =
+        [CpiAccountMeta::new([0u8; PUBKEY_LEN], false, false); MAX_CPI_ACCOUNT_CAPACITY];
+    let remaining_count = build_cpi_plan_metas(remaining_accounts, &mut remaining_metas)?;
+    validate_execute_cpi_plan(
+        ix,
+        &remaining_metas[..remaining_count],
+        protected,
+        wallet_key,
+    )
+}
+
+#[inline(never)]
+fn execute_checked_cpi_with_remaining_accounts<'a>(
+    ctx: CheckedCpiContext<'a, '_, '_>,
+    remaining_accounts: &'a [AccountView],
+) -> ProgramResult {
+    let final_count = ctx.ix.target_account_count as usize + 1;
+    let mut final_views = [ctx.wallet_account; MAX_FINAL_CPI_ACCOUNT_CAPACITY];
+    let mut final_metas: [InstructionAccount; MAX_FINAL_CPI_ACCOUNT_CAPACITY] =
+        core::array::from_fn(|_| InstructionAccount::readonly_signer(ctx.wallet_account.address()));
+    build_final_cpi_accounts(
+        ctx.ix,
+        ctx.wallet_account,
+        remaining_accounts,
+        &mut final_views,
+        &mut final_metas,
+    )?;
+    execute_checked_cpi_with_final_accounts(
+        ctx,
+        &final_views[..final_count],
+        &final_metas[..final_count],
+    )
 }
 
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -1141,39 +1183,40 @@ fn token_program_kind_from_owner(account: &AccountView) -> Result<TokenProgramKi
     }
 }
 
-fn build_cpi_plan_metas(accounts: &[AccountView]) -> Result<Vec<CpiAccountMeta>, ProgramError> {
+#[inline(never)]
+fn build_cpi_plan_metas(
+    accounts: &[AccountView],
+    metas: &mut [CpiAccountMeta; MAX_CPI_ACCOUNT_CAPACITY],
+) -> Result<usize, ProgramError> {
     if accounts.len() > MAX_CPI_ACCOUNTS as usize {
         return Err(AgentVaultError::AccountLimitExceeded.into());
     }
-    let mut metas = Vec::new();
-    metas
-        .try_reserve_exact(accounts.len())
-        .map_err(|_| AgentVaultError::AccountLimitExceeded)?;
     let mut i = 0;
     while i < accounts.len() {
-        metas.push(CpiAccountMeta::new(
+        metas[i] = CpiAccountMeta::new(
             address_bytes(accounts[i].address()),
             accounts[i].is_signer(),
             accounts[i].is_writable(),
-        ));
+        );
         i += 1;
     }
-    Ok(metas)
+    Ok(accounts.len())
 }
 
+#[inline(never)]
 fn build_final_cpi_accounts<'a>(
     ix: &crate::instruction::ExecuteCpiChecked<'_>,
     wallet: &'a AccountView,
     remaining_accounts: &'a [AccountView],
-    final_views: &mut Vec<&'a AccountView>,
-    final_metas: &mut Vec<InstructionAccount<'a>>,
+    final_views: &mut [&'a AccountView; MAX_FINAL_CPI_ACCOUNT_CAPACITY],
+    final_metas: &mut [InstructionAccount<'a>; MAX_FINAL_CPI_ACCOUNT_CAPACITY],
 ) -> ProgramResult {
     let final_count = ix.target_account_count as usize + 1;
     let mut final_index = 0usize;
     while final_index < final_count {
         if final_index == ix.wallet_meta_index as usize {
-            final_views.push(wallet);
-            final_metas.push(InstructionAccount::readonly_signer(wallet.address()));
+            final_views[final_index] = wallet;
+            final_metas[final_index] = InstructionAccount::readonly_signer(wallet.address());
         } else {
             let remaining_index = if final_index < ix.wallet_meta_index as usize {
                 final_index
@@ -1183,35 +1226,36 @@ fn build_final_cpi_accounts<'a>(
             let account = remaining_accounts
                 .get(remaining_index)
                 .ok_or(AgentVaultError::InvalidCpiAccounts)?;
-            final_views.push(account);
-            final_metas.push(InstructionAccount::new(
+            final_views[final_index] = account;
+            final_metas[final_index] = InstructionAccount::new(
                 account.address(),
                 account.is_writable(),
                 account.is_signer(),
-            ));
+            );
         }
         final_index += 1;
     }
     Ok(())
 }
 
+#[inline(never)]
 fn enforce_wallet_controlled_token_checks(
     ix: &crate::instruction::ExecuteCpiChecked<'_>,
     final_accounts: &[&AccountView],
     final_metas: &[InstructionAccount<'_>],
     wallet_key: &[u8; PUBKEY_LEN],
+    coverage: &mut WalletTokenPostCheckCoverage,
+    coverage_loaded: &mut bool,
 ) -> ProgramResult {
     let mut i = 0usize;
-    let mut coverage = WalletTokenPostCheckCoverage::EMPTY;
-    let mut coverage_loaded = false;
     while i < final_accounts.len() {
         if final_metas[i].is_writable {
             if let Some((mint, kind)) = read_wallet_controlled_token(final_accounts[i], wallet_key)?
             {
                 let token_index = i as u8;
-                if !coverage_loaded {
-                    coverage = wallet_token_post_check_coverage(ix)?;
-                    coverage_loaded = true;
+                if !*coverage_loaded {
+                    *coverage = wallet_token_post_check_coverage(ix)?;
+                    *coverage_loaded = true;
                 }
                 if !coverage.has_economic(token_index) || !coverage.has_custody(token_index) {
                     return Err(AgentVaultError::MissingCustodyPostCheck.into());
@@ -1657,6 +1701,16 @@ fn token_account_has_wallet_custody(
         || optional_pubkey_equals(&account.delegate, wallet_key)
 }
 
+const TOKEN_ACCOUNT_MINT_OFFSET: usize = 0;
+const TOKEN_ACCOUNT_AUTHORITY_OFFSET: usize = 32;
+const TOKEN_ACCOUNT_DELEGATE_OFFSET: usize = 72;
+const TOKEN_ACCOUNT_STATE_OFFSET: usize = 108;
+const TOKEN_ACCOUNT_IS_NATIVE_OFFSET: usize = 109;
+const TOKEN_ACCOUNT_CLOSE_AUTHORITY_OFFSET: usize = 129;
+const SPL_COPTION_NONE: &[u8; 4] = &[0, 0, 0, 0];
+const SPL_COPTION_SOME: &[u8; 4] = &[1, 0, 0, 0];
+const SPL_TOKEN_STATE_INITIALIZED: u8 = 1;
+
 fn validate_wsol_ata(
     wallet_wsol_ata: &AccountView,
     wallet: &Address,
@@ -1666,24 +1720,29 @@ fn validate_wsol_ata(
     assert_associated_token_address(wallet_wsol_ata, wallet, &NATIVE_MINT_ID, token_program)?;
 
     let data = wallet_wsol_ata.try_borrow()?;
-    let account = parse_token_account_for_mint(
-        &data,
-        TokenProgramKind::Tokenkeg,
-        &TokenMint {
-            mint_authority: OptionalPubkey::None,
-            supply: 0,
-            decimals: 9,
-            freeze_authority: OptionalPubkey::None,
-            extensions: crate::token_state::MintExtensionPolicy::none(),
-        },
-    )?;
     let wallet_key = address_bytes(wallet);
-    if account.mint != address_bytes(&NATIVE_MINT_ID) || account.authority != wallet_key {
+    if data.len() != TOKEN_ACCOUNT_LEN {
         return Err(AgentVaultError::InvalidWsolAccount.into());
     }
-    if !optional_pubkey_is_none_or_equals(&account.close_authority, &wallet_key)
-        || !account.delegate.is_none()
-        || account.native_reserve.is_none()
+
+    let close_authority_tag =
+        &data[TOKEN_ACCOUNT_CLOSE_AUTHORITY_OFFSET..TOKEN_ACCOUNT_CLOSE_AUTHORITY_OFFSET + 4];
+    let close_authority_ok = close_authority_tag == SPL_COPTION_NONE
+        || (close_authority_tag == SPL_COPTION_SOME
+            && &data[TOKEN_ACCOUNT_CLOSE_AUTHORITY_OFFSET + 4
+                ..TOKEN_ACCOUNT_CLOSE_AUTHORITY_OFFSET + 4 + PUBKEY_LEN]
+                == wallet_key);
+
+    if &data[TOKEN_ACCOUNT_MINT_OFFSET..TOKEN_ACCOUNT_MINT_OFFSET + PUBKEY_LEN]
+        != NATIVE_MINT_ID.as_ref()
+        || &data[TOKEN_ACCOUNT_AUTHORITY_OFFSET..TOKEN_ACCOUNT_AUTHORITY_OFFSET + PUBKEY_LEN]
+            != wallet_key
+        || data[TOKEN_ACCOUNT_STATE_OFFSET] != SPL_TOKEN_STATE_INITIALIZED
+        || &data[TOKEN_ACCOUNT_DELEGATE_OFFSET..TOKEN_ACCOUNT_DELEGATE_OFFSET + 4]
+            != SPL_COPTION_NONE
+        || &data[TOKEN_ACCOUNT_IS_NATIVE_OFFSET..TOKEN_ACCOUNT_IS_NATIVE_OFFSET + 4]
+            != SPL_COPTION_SOME
+        || !close_authority_ok
     {
         return Err(AgentVaultError::InvalidWsolAccount.into());
     }
