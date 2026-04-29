@@ -458,6 +458,65 @@ mod tests {
     }
 
     #[test]
+    fn final_meta_handles_max_accounts_with_wallet_at_boundaries() {
+        let wallet = key(9);
+        let mut accounts =
+            [CpiAccountMeta::new([0u8; PUBKEY_LEN], false, false); MAX_CPI_ACCOUNTS as usize];
+        let mut i = 0usize;
+        while i < accounts.len() {
+            accounts[i] = meta(10 + i as u8, false, i % 2 == 0);
+            i += 1;
+        }
+
+        assert_eq!(
+            final_cpi_account_count(MAX_CPI_ACCOUNTS).unwrap(),
+            MAX_CPI_ACCOUNTS as usize + 1
+        );
+
+        for wallet_meta_index in [0, MAX_CPI_ACCOUNTS / 2, MAX_CPI_ACCOUNTS] {
+            assert_eq!(
+                final_account_meta_at(
+                    wallet_meta_index,
+                    wallet_meta_index,
+                    MAX_CPI_ACCOUNTS,
+                    &accounts,
+                    &wallet,
+                )
+                .unwrap(),
+                CpiAccountMeta::new(wallet, true, false)
+            );
+
+            if wallet_meta_index > 0 {
+                assert_eq!(
+                    final_account_meta_at(
+                        wallet_meta_index - 1,
+                        wallet_meta_index,
+                        MAX_CPI_ACCOUNTS,
+                        &accounts,
+                        &wallet,
+                    )
+                    .unwrap(),
+                    accounts[wallet_meta_index as usize - 1]
+                );
+            }
+
+            if wallet_meta_index < MAX_CPI_ACCOUNTS {
+                assert_eq!(
+                    final_account_meta_at(
+                        wallet_meta_index + 1,
+                        wallet_meta_index,
+                        MAX_CPI_ACCOUNTS,
+                        &accounts,
+                        &wallet,
+                    )
+                    .unwrap(),
+                    accounts[wallet_meta_index as usize]
+                );
+            }
+        }
+    }
+
+    #[test]
     fn rejects_remaining_count_mismatch_and_invalid_wallet_meta_index() {
         let accounts = [meta(10, false, false), meta(11, false, true)];
         assert_custom_error(

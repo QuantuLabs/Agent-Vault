@@ -68,24 +68,25 @@ const SHA256_EMPTY: [u8; 32] = [
     0xb8, 0x55,
 ];
 const CU_REGRESSION_BPS: u64 = 1_000;
+// Baselines use the max observed value between isolated and full-suite LiteSVM runs.
 const CU_BASELINE_INITIALIZE_GLOBAL_CONFIG: u64 = 5_407;
-const CU_BASELINE_INIT_VAULT_CONFIG: u64 = 15_010;
-const CU_BASELINE_CREATE_WALLET: u64 = 12_843;
-const CU_BASELINE_CREATE_WALLET_SECOND: u64 = 9_843;
-const CU_BASELINE_UPDATE_WALLET_LABEL: u64 = 6_577;
-const CU_BASELINE_DEPOSIT_SOL: u64 = 3_668;
-const CU_BASELINE_WITHDRAW_SOL: u64 = 2_583;
-const CU_BASELINE_TRANSFER_SOL: u64 = 4_495;
-const CU_BASELINE_CREATE_WALLET_ATA: u64 = 40_278;
-const CU_BASELINE_TRANSFER_SPL: u64 = 22_096;
-const CU_BASELINE_CLOSE_WALLET_ATA: u64 = 18_229;
-const CU_BASELINE_WRAP_SOL: u64 = 11_970;
-const CU_BASELINE_UNWRAP_SOL: u64 = 16_134;
-const CU_BASELINE_EXECUTE_CPI_CHECKED_MEMO: u64 = 28_918;
-const CU_BASELINE_EXECUTE_CPI_CHECKED_NOOP: u64 = 9_881;
-const CU_BASELINE_EXECUTE_CPI_CHECKED_MOCK_SWAP: u64 = 66_367;
-const CU_BASELINE_CLOSE_WALLET: u64 = 6_690;
-const CU_BASELINE_REOPEN_WALLET_FOR_RECOVERY: u64 = 14_629;
+const CU_BASELINE_INIT_VAULT_CONFIG: u64 = 14_998;
+const CU_BASELINE_CREATE_WALLET: u64 = 12_610;
+const CU_BASELINE_CREATE_WALLET_SECOND: u64 = 9_610;
+const CU_BASELINE_UPDATE_WALLET_LABEL: u64 = 6_321;
+const CU_BASELINE_DEPOSIT_SOL: u64 = 3_615;
+const CU_BASELINE_WITHDRAW_SOL: u64 = 2_543;
+const CU_BASELINE_TRANSFER_SOL: u64 = 4_402;
+const CU_BASELINE_CREATE_WALLET_ATA: u64 = 40_001;
+const CU_BASELINE_TRANSFER_SPL: u64 = 21_824;
+const CU_BASELINE_CLOSE_WALLET_ATA: u64 = 17_953;
+const CU_BASELINE_WRAP_SOL: u64 = 11_317;
+const CU_BASELINE_UNWRAP_SOL: u64 = 15_471;
+const CU_BASELINE_EXECUTE_CPI_CHECKED_MEMO: u64 = 28_604;
+const CU_BASELINE_EXECUTE_CPI_CHECKED_NOOP: u64 = 9_567;
+const CU_BASELINE_EXECUTE_CPI_CHECKED_MOCK_SWAP: u64 = 65_269;
+const CU_BASELINE_CLOSE_WALLET: u64 = 6_255;
+const CU_BASELINE_REOPEN_WALLET_FOR_RECOVERY: u64 = 14_428;
 
 fn assert_cu_regression(label: &str, actual: u64, baseline: u64) {
     let allowed = baseline + ((baseline * CU_REGRESSION_BPS) + 9_999) / 10_000;
@@ -324,31 +325,6 @@ fn token_account_data(mint: Address, authority: Address, amount: u64) -> Vec<u8>
     data
 }
 
-fn token_account_data_with_delegate(
-    mint: Address,
-    authority: Address,
-    amount: u64,
-    delegate: Address,
-) -> Vec<u8> {
-    let mut data = token_account_data(mint, authority, amount);
-    data[72..76].copy_from_slice(&[1, 0, 0, 0]);
-    data[76..108].copy_from_slice(delegate.as_ref());
-    data[121..129].copy_from_slice(&amount.to_le_bytes());
-    data
-}
-
-fn token_account_data_with_close_authority(
-    mint: Address,
-    authority: Address,
-    amount: u64,
-    close_authority: Address,
-) -> Vec<u8> {
-    let mut data = token_account_data(mint, authority, amount);
-    data[129..133].copy_from_slice(&[1, 0, 0, 0]);
-    data[133..165].copy_from_slice(close_authority.as_ref());
-    data
-}
-
 fn token_2022_account_data_with_withheld_fee(
     mint: Address,
     authority: Address,
@@ -388,6 +364,54 @@ fn native_token_account_data(
     data[109..113].copy_from_slice(&[1, 0, 0, 0]);
     data[113..121].copy_from_slice(&native_reserve.to_le_bytes());
     data
+}
+
+fn native_token_account_data_with_close_authority(
+    mint: Address,
+    authority: Address,
+    amount: u64,
+    native_reserve: u64,
+    close_authority: Address,
+) -> Vec<u8> {
+    let mut data = native_token_account_data(mint, authority, amount, native_reserve);
+    data[129..133].copy_from_slice(&[1, 0, 0, 0]);
+    data[133..165].copy_from_slice(close_authority.as_ref());
+    data
+}
+
+fn malformed_wsol_account_data_cases(wallet: Address, native_reserve: u64) -> Vec<Vec<u8>> {
+    let mut delegate_tag = native_token_account_data(NATIVE_MINT, wallet, 0, native_reserve);
+    delegate_tag[72..76].copy_from_slice(&[2, 0, 0, 0]);
+
+    let mut native_tag = native_token_account_data(NATIVE_MINT, wallet, 0, native_reserve);
+    native_tag[109..113].copy_from_slice(&[2, 0, 0, 0]);
+
+    let mut close_tag = native_token_account_data(NATIVE_MINT, wallet, 0, native_reserve);
+    close_tag[129..133].copy_from_slice(&[2, 0, 0, 0]);
+
+    let mut short_data = native_token_account_data(NATIVE_MINT, wallet, 0, native_reserve);
+    short_data.pop();
+
+    let mut long_data = native_token_account_data(NATIVE_MINT, wallet, 0, native_reserve);
+    long_data.push(0);
+
+    vec![
+        token_account_data(NATIVE_MINT, wallet, 0),
+        native_token_account_data(Address::new_unique(), wallet, 0, native_reserve),
+        native_token_account_data(NATIVE_MINT, Address::new_unique(), 0, native_reserve),
+        native_token_account_data_with_close_authority(
+            NATIVE_MINT,
+            wallet,
+            0,
+            native_reserve,
+            Address::new_unique(),
+        ),
+        delegate_tag,
+        native_tag,
+        close_tag,
+        short_data,
+        long_data,
+    ]
 }
 
 fn token_amount(svm: &LiteSVM, token_account: &Address) -> u64 {
@@ -832,6 +856,37 @@ fn execute_cpi_checked_missing_economic_post_check_ix(
     data.push(11);
     data.push(0);
     data.extend_from_slice(SYSTEM_PROGRAM.as_ref());
+
+    Instruction {
+        program_id: PROGRAM_ID,
+        accounts: vec![
+            AccountMeta::new_readonly(INITIALIZER, true),
+            AccountMeta::new_readonly(global_config_pda(), false),
+            AccountMeta::new_readonly(vault_config, false),
+            AccountMeta::new_readonly(wallet, false),
+            AccountMeta::new_readonly(agent_asset, false),
+            AccountMeta::new_readonly(MEMO_PROGRAM, false),
+        ],
+        data,
+    }
+}
+
+fn execute_cpi_checked_trailing_post_check_byte_ix(
+    agent_asset: Address,
+    vault_config: Address,
+    wallet: Address,
+) -> Instruction {
+    let mut data = Vec::with_capacity(1 + 6 + 1 + 10 + 1);
+    data.push(TAG_EXECUTE_CPI_CHECKED);
+    data.extend_from_slice(&0u16.to_le_bytes());
+    data.push(0);
+    data.push(0);
+    data.extend_from_slice(&0u16.to_le_bytes());
+    data.push(1);
+    data.push(0);
+    data.push(0);
+    data.extend_from_slice(&1u64.to_le_bytes());
+    data.push(99);
 
     Instruction {
         program_id: PROGRAM_ID,
@@ -2619,6 +2674,31 @@ fn devnet_release_cost_report() {
     )
     .unwrap();
 
+    println!("agent-vault devnet cost report");
+    println!("activation_fee_lamports={EXPECTED_ACTIVATION_FEE_LAMPORTS}");
+    println!("rent_global_config_160={}", rent_minimum(GLOBAL_CONFIG_LEN));
+    println!("rent_vault_config_24={}", rent_minimum(VAULT_CONFIG_LEN));
+    println!("rent_wallet_32={}", rent_minimum(WALLET_LEN));
+    println!("rent_token_account_165={}", token_account_rent());
+    println!("cu_initialize_global_config={initialize_global_config_cu}");
+    println!("cu_init_vault_config={init_vault_cu}");
+    println!("cu_create_wallet={create_wallet_cu}");
+    println!("cu_create_wallet_second={create_wallet_1_cu}");
+    println!("cu_update_wallet_label={update_label_cu}");
+    println!("cu_deposit_sol={deposit_cu}");
+    println!("cu_withdraw_sol={withdraw_cu}");
+    println!("cu_transfer_sol={transfer_sol_cu}");
+    println!("cu_create_wallet_ata={create_ata_cu}");
+    println!("cu_transfer_spl={transfer_spl_cu}");
+    println!("cu_close_wallet_ata={close_ata_cu}");
+    println!("cu_wrap_sol={wrap_sol_cu}");
+    println!("cu_unwrap_sol={unwrap_sol_cu}");
+    println!("cu_execute_cpi_checked_memo={execute_cpi_memo_cu}");
+    println!("cu_execute_cpi_checked_noop_baseline={execute_cpi_noop_cu}");
+    println!("cu_execute_cpi_checked_mock_swap={execute_cpi_mock_swap_cu}");
+    println!("cu_close_wallet={close_wallet_cu}");
+    println!("cu_reopen_wallet_for_recovery={reopen_cu}");
+
     assert_cu_regression("init_vault_config", init_vault_cu, CU_BASELINE_INIT_VAULT_CONFIG);
     assert_cu_regression(
         "initialize_global_config",
@@ -2674,30 +2754,6 @@ fn devnet_release_cost_report() {
         CU_BASELINE_REOPEN_WALLET_FOR_RECOVERY,
     );
 
-    println!("agent-vault devnet cost report");
-    println!("activation_fee_lamports={EXPECTED_ACTIVATION_FEE_LAMPORTS}");
-    println!("rent_global_config_160={}", rent_minimum(GLOBAL_CONFIG_LEN));
-    println!("rent_vault_config_24={}", rent_minimum(VAULT_CONFIG_LEN));
-    println!("rent_wallet_32={}", rent_minimum(WALLET_LEN));
-    println!("rent_token_account_165={}", token_account_rent());
-    println!("cu_initialize_global_config={initialize_global_config_cu}");
-    println!("cu_init_vault_config={init_vault_cu}");
-    println!("cu_create_wallet={create_wallet_cu}");
-    println!("cu_create_wallet_second={create_wallet_1_cu}");
-    println!("cu_update_wallet_label={update_label_cu}");
-    println!("cu_deposit_sol={deposit_cu}");
-    println!("cu_withdraw_sol={withdraw_cu}");
-    println!("cu_transfer_sol={transfer_sol_cu}");
-    println!("cu_create_wallet_ata={create_ata_cu}");
-    println!("cu_transfer_spl={transfer_spl_cu}");
-    println!("cu_close_wallet_ata={close_ata_cu}");
-    println!("cu_wrap_sol={wrap_sol_cu}");
-    println!("cu_unwrap_sol={unwrap_sol_cu}");
-    println!("cu_execute_cpi_checked_memo={execute_cpi_memo_cu}");
-    println!("cu_execute_cpi_checked_noop_baseline={execute_cpi_noop_cu}");
-    println!("cu_execute_cpi_checked_mock_swap={execute_cpi_mock_swap_cu}");
-    println!("cu_close_wallet={close_wallet_cu}");
-    println!("cu_reopen_wallet_for_recovery={reopen_cu}");
 }
 
 #[test]
@@ -2881,6 +2937,29 @@ fn execute_cpi_checked_rejects_missing_economic_post_check() {
         TransactionError::InstructionError(
             0,
             InstructionError::Custom(AgentVaultError::MissingEconomicPostCheck as u32),
+        )
+    );
+}
+
+#[test]
+fn execute_cpi_checked_rejects_trailing_post_check_bytes_before_cpi() {
+    let mut svm = runtime();
+    initialize_global_config(&mut svm);
+    svm.airdrop(&FEE_TREASURY, 1).unwrap();
+
+    let agent_asset = Address::new_unique();
+    let (vault_config, wallet) = create_agent_vault_and_wallet(&mut svm, agent_asset);
+    let error = send_unsigned_tx(
+        &mut svm,
+        execute_cpi_checked_trailing_post_check_byte_ix(agent_asset, vault_config, wallet),
+    )
+    .unwrap_err();
+
+    assert_eq!(
+        error,
+        TransactionError::InstructionError(
+            0,
+            InstructionError::Custom(AgentVaultError::InvalidPostCheck as u32),
         )
     );
 }
@@ -3710,17 +3789,17 @@ fn wsol_wrap_and_unwrap_preserve_wallet_authority_and_rent() {
     let (vault_config, wallet) = create_agent_vault_and_wallet(&mut svm, agent_asset);
     let native_reserve = token_account_rent();
     let wallet_wsol_ata = ata_address(&wallet, &NATIVE_MINT, &TOKEN_PROGRAM);
-    install_token_account(
-        &mut svm,
-        wallet_wsol_ata,
-        TOKEN_PROGRAM,
-        native_token_account_data(NATIVE_MINT, wallet, 0, native_reserve),
-    );
     svm.set_account(
         wallet_wsol_ata,
         Account {
             lamports: native_reserve,
-            data: native_token_account_data(NATIVE_MINT, wallet, 0, native_reserve),
+            data: native_token_account_data_with_close_authority(
+                NATIVE_MINT,
+                wallet,
+                0,
+                native_reserve,
+                wallet,
+            ),
             owner: TOKEN_PROGRAM,
             ..Default::default()
         },
@@ -3762,12 +3841,7 @@ fn wsol_wrap_rejects_malformed_wallet_atas() {
     let wallet_wsol_ata = ata_address(&wallet, &NATIVE_MINT, &TOKEN_PROGRAM);
     let native_reserve = token_account_rent();
 
-    for data in [
-        token_account_data(NATIVE_MINT, wallet, 0),
-        native_token_account_data(NATIVE_MINT, Address::new_unique(), 0, native_reserve),
-        token_account_data_with_delegate(NATIVE_MINT, wallet, 0, Address::new_unique()),
-        token_account_data_with_close_authority(NATIVE_MINT, wallet, 0, Address::new_unique()),
-    ] {
+    for data in malformed_wsol_account_data_cases(wallet, native_reserve) {
         svm.set_account(
             wallet_wsol_ata,
             Account {
@@ -3804,12 +3878,7 @@ fn unwrap_sol_rejects_malformed_wsol_ata() {
     let wallet_wsol_ata = ata_address(&wallet, &NATIVE_MINT, &TOKEN_PROGRAM);
     let native_reserve = token_account_rent();
 
-    for data in [
-        token_account_data(NATIVE_MINT, wallet, 0),
-        native_token_account_data(NATIVE_MINT, Address::new_unique(), 0, native_reserve),
-        token_account_data_with_delegate(NATIVE_MINT, wallet, 0, Address::new_unique()),
-        token_account_data_with_close_authority(NATIVE_MINT, wallet, 0, Address::new_unique()),
-    ] {
+    for data in malformed_wsol_account_data_cases(wallet, native_reserve) {
         svm.set_account(
             wallet_wsol_ata,
             Account {
