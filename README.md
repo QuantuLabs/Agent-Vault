@@ -65,12 +65,14 @@ writable wallet-controlled token accounts.
 
 The intended SDK/mainnet client behavior is fail-closed unless the canonical
 deployment, global config, ProgramData hash, and upgrade authority policy all
-verify against a published release manifest. SDK integration is not implemented
-in this repository yet.
+verify against a published release manifest. The TypeScript SDK implements this
+verification in the separate `agent-vault-sdk` repository.
 
 ## Release Metadata
 
 - [Devnet release manifest](docs/RELEASE_MANIFEST.devnet.json)
+- [Devnet verification guide](docs/DEVNET.md)
+- [Program architecture](docs/PROGRAM.md)
 
 ## Build And Test
 
@@ -107,7 +109,8 @@ scripts                release verification helpers
 ## SDK
 
 The WIP TypeScript SDK is maintained separately in the `agent-vault-sdk`
-workspace folder. Its npm package name is `agent-vault`.
+workspace folder. Its npm package name is `agent-vault`; it provides the
+high-level `.identities` and `.wallets` developer surface for devnet testing.
 
 ## License
 

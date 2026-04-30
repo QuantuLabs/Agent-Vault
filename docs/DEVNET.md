@@ -1,0 +1,86 @@
+# Agent Vault Devnet
+
+Agent Vault is currently a devnet candidate. It is WIP, unaudited, and not a
+mainnet release.
+
+## Deployment
+
+```text
+Program ID:         36u7KMBuxjExvU6V2nfTX5SnNdYMGUupFiYouLzrgpfW
+8004 registry:     8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C
+8004 collection:   6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA
+Release status:    deployed candidate
+```
+
+The release manifest is tracked in
+[`docs/RELEASE_MANIFEST.devnet.json`](./RELEASE_MANIFEST.devnet.json). SDK and
+release tooling should verify the program account, ProgramData account, deployed
+ELF hash, global config PDA, and expected global config fields against that
+manifest before treating the deployment as canonical.
+
+## Verify Locally
+
+From the program repository:
+
+```bash
+NO_DNA=1 cargo test --offline
+NO_DNA=1 cargo test --offline --manifest-path tests/runtime/Cargo.toml -- --test-threads=1
+NO_DNA=1 cargo test --offline --manifest-path tests/runtime/Cargo.toml devnet_release_cost_report -- --nocapture --test-threads=1
+NO_DNA=1 ./scripts/verify-formal.sh
+```
+
+Full release verification:
+
+```bash
+NO_DNA=1 ./scripts/verify-devnet-release.sh
+```
+
+That script runs formatting, Clippy, unit tests, SBF build checks, LiteSVM
+runtime tests, localnet e2e, Kani harnesses, and release artifact hash/size
+checks.
+
+## SDK Preflight
+
+From the SDK repository:
+
+```bash
+npm ci
+npm run check
+npm run e2e:devnet
+```
+
+`npm run e2e:devnet` defaults to preflight-only mode. It verifies the live devnet
+deployment and exits before any write. Set `AGENT_VAULT_E2E_SEND=1` only when
+the signer is funded and you intentionally want to run the live write flow.
+
+## Devnet Flow Coverage
+
+The SDK devnet e2e covers the full V0 instruction surface when send mode is
+enabled:
+
+```text
+initialize_global_config
+init_vault_config
+create_wallet
+update_wallet_label
+deposit_sol
+withdraw_sol
+transfer_sol
+close_wallet
+reopen_wallet_for_recovery
+create_wallet_ata
+transfer_spl
+wrap_sol
+unwrap_sol
+close_wallet_ata
+execute_cpi_checked
+```
+
+The runtime `devnet_release_cost_report` test prints compute units, rent
+snapshots, and release cost categories for the deterministic LiteSVM fixtures.
+
+## Mainnet
+
+There is no mainnet release. Mainnet writes must remain blocked until a
+canonical mainnet manifest and upgrade policy are published and implemented in
+the SDK verification path.
