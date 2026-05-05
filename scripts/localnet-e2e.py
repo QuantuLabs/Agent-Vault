@@ -50,8 +50,8 @@ MINT_SWAP_IN = Keypair.from_seed(bytes([11]) * 32).pubkey()
 MINT_SWAP_OUT = Keypair.from_seed(bytes([12]) * 32).pubkey()
 TRANSFER_DEST = Keypair.from_seed(bytes([13]) * 32).pubkey()
 POOL_INPUT = Keypair.from_seed(bytes([14]) * 32).pubkey()
-SWAP_USER_OUTPUT = Keypair.from_seed(bytes([15]) * 32).pubkey()
-POOL_AUTHORITY = Keypair.from_seed(bytes([16]) * 32).pubkey()
+POOL_AUTHORITY = Pubkey.find_program_address([b"pool_authority"], MOCK_AMM_PROGRAM)[0]
+SWAP_POOL_OUTPUT = Keypair.from_seed(bytes([15]) * 32).pubkey()
 MINT_2022_CREATE = Keypair.from_seed(bytes([17]) * 32).pubkey()
 MINT_2022_TRANSFER = Keypair.from_seed(bytes([18]) * 32).pubkey()
 DEST_2022_TRANSFER = Keypair.from_seed(bytes([19]) * 32).pubkey()
@@ -496,15 +496,14 @@ def ix_unwrap_sol(index):
 def ix_execute_cpi_checked_mock_swap(amount_in, max_input, amount_out, min_output):
     wallet = wallet_pda(AGENT_ASSET, 0)
     user_input = ata(wallet, MINT_SWAP_IN)
-    pool_output = ata(wallet, MINT_SWAP_OUT)
+    wallet_output = ata(wallet, MINT_SWAP_OUT)
     target_data = u64(amount_in) + u64(amount_out) + bytes([6, 6])
-    data = bytes([TAG_EXECUTE_CPI_CHECKED]) + u16(0) + bytes([0, 7]) + u16(len(target_data)) + target_data
-    data += bytes([5])
-    data += bytes([7, 1, 5]) + bytes(MINT_SWAP_IN) + u64(max_input)
-    data += bytes([9, 1, 5])
-    data += bytes([7, 3, 6]) + bytes(MINT_SWAP_OUT) + u64(amount_out)
-    data += bytes([9, 3, 6])
-    data += bytes([6, 4, 6]) + bytes(MINT_SWAP_OUT) + u64(min_output)
+    data = bytes([TAG_EXECUTE_CPI_CHECKED]) + u16(0) + bytes([0, 8]) + u16(len(target_data)) + target_data
+    data += bytes([4])
+    data += bytes([7, 1, 6]) + bytes(MINT_SWAP_IN) + u64(max_input)
+    data += bytes([9, 1, 6])
+    data += bytes([6, 4, 7]) + bytes(MINT_SWAP_OUT) + u64(min_output)
+    data += bytes([9, 4, 7])
     return Instruction(
         PROGRAM_ID,
         data,
@@ -517,8 +516,9 @@ def ix_execute_cpi_checked_mock_swap(amount_in, max_input, amount_out, min_outpu
             am(MOCK_AMM_PROGRAM),
             am(user_input, writable=True),
             am(POOL_INPUT, writable=True),
-            am(pool_output, writable=True),
-            am(SWAP_USER_OUTPUT, writable=True),
+            am(SWAP_POOL_OUTPUT, writable=True),
+            am(wallet_output, writable=True),
+            am(POOL_AUTHORITY),
             am(MINT_SWAP_IN),
             am(MINT_SWAP_OUT),
             am(TOKEN_PROGRAM),
@@ -660,7 +660,6 @@ def write_fixtures():
     wallet0 = wallet_pda(AGENT_ASSET, 0)
     transfer_source = ata(wallet0, MINT_TRANSFER)
     swap_input = ata(wallet0, MINT_SWAP_IN)
-    swap_pool_output = ata(wallet0, MINT_SWAP_OUT)
     transfer_2022_source = ata(wallet0, MINT_2022_TRANSFER, TOKEN_2022_PROGRAM)
     fee_2022_source = ata(wallet0, MINT_2022_FEE, TOKEN_2022_PROGRAM)
     withheld_2022_wallet_ata = ata(wallet0, MINT_2022_WITHHELD, TOKEN_2022_PROGRAM)
@@ -731,10 +730,10 @@ def write_fixtures():
             ),
             (
                 "swap-pool-output.json",
-                swap_pool_output,
+                SWAP_POOL_OUTPUT,
                 2_039_280,
                 TOKEN_PROGRAM,
-                token_account_data(MINT_SWAP_OUT, wallet0, 500),
+                token_account_data(MINT_SWAP_OUT, POOL_AUTHORITY, 500),
             ),
             (
                 "pool-input.json",
@@ -744,11 +743,11 @@ def write_fixtures():
                 token_account_data(MINT_SWAP_IN, POOL_AUTHORITY, 0),
             ),
             (
-                "swap-user-output.json",
-                SWAP_USER_OUTPUT,
+                "swap-wallet-output.json",
+                ata(wallet0, MINT_SWAP_OUT),
                 2_039_280,
                 TOKEN_PROGRAM,
-                token_account_data(MINT_SWAP_OUT, POOL_AUTHORITY, 0),
+                token_account_data(MINT_SWAP_OUT, wallet0, 0),
             ),
             (
                 "transfer-2022-source.json",
@@ -1098,13 +1097,13 @@ def run_e2e():
         )
         require(token_amount(ata(wallet0, MINT_SWAP_IN)) == 1_000, "swap input mutated after rejected tx")
         require(token_amount(POOL_INPUT) == 0, "pool input mutated after rejected tx")
-        require(token_amount(ata(wallet0, MINT_SWAP_OUT)) == 500, "pool output mutated after rejected tx")
-        require(token_amount(SWAP_USER_OUTPUT) == 0, "swap output mutated after rejected tx")
+        require(token_amount(SWAP_POOL_OUTPUT) == 500, "pool output mutated after rejected tx")
+        require(token_amount(ata(wallet0, MINT_SWAP_OUT)) == 0, "wallet swap output mutated after rejected tx")
         send_ixs([ix_execute_cpi_checked_mock_swap(100, 100, 40, 40)])
         require(token_amount(ata(wallet0, MINT_SWAP_IN)) == 900, "swap input amount mismatch")
         require(token_amount(POOL_INPUT) == 100, "pool input amount mismatch")
-        require(token_amount(ata(wallet0, MINT_SWAP_OUT)) == 460, "pool output amount mismatch")
-        require(token_amount(SWAP_USER_OUTPUT) == 40, "swap output amount mismatch")
+        require(token_amount(SWAP_POOL_OUTPUT) == 460, "pool output amount mismatch")
+        require(token_amount(ata(wallet0, MINT_SWAP_OUT)) == 40, "wallet swap output amount mismatch")
 
         print("localnet e2e: ok")
         success = True

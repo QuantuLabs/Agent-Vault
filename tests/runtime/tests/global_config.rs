@@ -85,7 +85,7 @@ const CU_BASELINE_WRAP_SOL: u64 = 14_309;
 const CU_BASELINE_UNWRAP_SOL: u64 = 18_463;
 const CU_BASELINE_EXECUTE_CPI_CHECKED_MEMO: u64 = 28_568;
 const CU_BASELINE_EXECUTE_CPI_CHECKED_NOOP: u64 = 9_527;
-const CU_BASELINE_EXECUTE_CPI_CHECKED_MOCK_SWAP: u64 = 70_388;
+const CU_BASELINE_EXECUTE_CPI_CHECKED_MOCK_SWAP: u64 = 69_830;
 const CU_BASELINE_CLOSE_WALLET: u64 = 6_255;
 const CU_BASELINE_REOPEN_WALLET_FOR_RECOVERY: u64 = 14_428;
 
@@ -1509,7 +1509,7 @@ fn execute_cpi_checked_mock_swap_ix(
     amount_out: u64,
     min_output: u64,
 ) -> Instruction {
-    execute_cpi_checked_mock_swap_ix_with_decimals(
+    execute_cpi_checked_mock_swap_with_pool_authority_ix(
         agent_asset,
         vault_config,
         wallet,
@@ -1519,6 +1519,7 @@ fn execute_cpi_checked_mock_swap_ix(
         pool_input,
         pool_output,
         user_output,
+        mock_pool_authority(),
         amount_in,
         max_input,
         amount_out,
@@ -1526,86 +1527,6 @@ fn execute_cpi_checked_mock_swap_ix(
         6,
         6,
     )
-}
-
-#[allow(clippy::too_many_arguments)]
-fn execute_cpi_checked_mock_swap_ix_with_decimals(
-    agent_asset: Address,
-    vault_config: Address,
-    wallet: Address,
-    input_mint: Address,
-    output_mint: Address,
-    user_input: Address,
-    pool_input: Address,
-    pool_output: Address,
-    user_output: Address,
-    amount_in: u64,
-    max_input: u64,
-    amount_out: u64,
-    min_output: u64,
-    input_decimals: u8,
-    output_decimals: u8,
-) -> Instruction {
-    let mut target_data = [0u8; 18];
-    target_data[0..8].copy_from_slice(&amount_in.to_le_bytes());
-    target_data[8..16].copy_from_slice(&amount_out.to_le_bytes());
-    target_data[16] = input_decimals;
-    target_data[17] = output_decimals;
-
-    let mut data = Vec::with_capacity(1 + 6 + target_data.len() + 1 + (43 * 3) + (3 * 2));
-    data.push(TAG_EXECUTE_CPI_CHECKED);
-    data.extend_from_slice(&0u16.to_le_bytes());
-    data.push(0);
-    data.push(7);
-    data.extend_from_slice(&(target_data.len() as u16).to_le_bytes());
-    data.extend_from_slice(&target_data);
-    data.push(5);
-
-    data.push(7);
-    data.push(1);
-    data.push(5);
-    data.extend_from_slice(input_mint.as_ref());
-    data.extend_from_slice(&max_input.to_le_bytes());
-
-    data.push(9);
-    data.push(1);
-    data.push(5);
-
-    data.push(7);
-    data.push(3);
-    data.push(6);
-    data.extend_from_slice(output_mint.as_ref());
-    data.extend_from_slice(&amount_out.to_le_bytes());
-
-    data.push(9);
-    data.push(3);
-    data.push(6);
-
-    data.push(6);
-    data.push(4);
-    data.push(6);
-    data.extend_from_slice(output_mint.as_ref());
-    data.extend_from_slice(&min_output.to_le_bytes());
-
-    Instruction {
-        program_id: PROGRAM_ID,
-        accounts: vec![
-            AccountMeta::new_readonly(INITIALIZER, true),
-            AccountMeta::new_readonly(global_config_pda(), false),
-            AccountMeta::new_readonly(vault_config, false),
-            AccountMeta::new_readonly(wallet, false),
-            AccountMeta::new_readonly(agent_asset, false),
-            AccountMeta::new_readonly(MOCK_AMM_PROGRAM, false),
-            AccountMeta::new(user_input, false),
-            AccountMeta::new(pool_input, false),
-            AccountMeta::new(pool_output, false),
-            AccountMeta::new(user_output, false),
-            AccountMeta::new_readonly(input_mint, false),
-            AccountMeta::new_readonly(output_mint, false),
-            AccountMeta::new_readonly(TOKEN_PROGRAM, false),
-        ],
-        data,
-    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2856,8 +2777,9 @@ fn devnet_release_cost_report() {
     install_mint(&mut svm, output_mint, TOKEN_PROGRAM, 6);
     let user_input = ata_address(&wallet, &input_mint, &TOKEN_PROGRAM);
     let pool_input = Address::new_unique();
-    let pool_output = ata_address(&wallet, &output_mint, &TOKEN_PROGRAM);
-    let user_output = Address::new_unique();
+    let pool_authority = mock_pool_authority();
+    let pool_output = Address::new_unique();
+    let user_output = ata_address(&wallet, &output_mint, &TOKEN_PROGRAM);
     install_token_account(
         &mut svm,
         user_input,
@@ -2874,13 +2796,13 @@ fn devnet_release_cost_report() {
         &mut svm,
         pool_output,
         TOKEN_PROGRAM,
-        token_account_data(output_mint, wallet, 40),
+        token_account_data(output_mint, pool_authority, 40),
     );
     install_token_account(
         &mut svm,
         user_output,
         TOKEN_PROGRAM,
-        token_account_data(output_mint, Address::new_unique(), 0),
+        token_account_data(output_mint, wallet, 0),
     );
     let execute_cpi_mock_swap_cu = send_unsigned_tx(
         &mut svm,
@@ -2903,6 +2825,12 @@ fn devnet_release_cost_report() {
     .unwrap();
     let execute_cpi_mock_swap_target_cu =
         execute_cpi_mock_swap_cu.saturating_sub(execute_cpi_noop_cu);
+    install_token_account(
+        &mut svm,
+        user_output,
+        TOKEN_PROGRAM,
+        token_account_data(output_mint, wallet, 0),
+    );
     send_unsigned_tx(
         &mut svm,
         close_wallet_ata_ix(
@@ -4105,8 +4033,9 @@ fn execute_cpi_checked_mock_swap_enforces_max_input_and_min_output() {
 
     let user_input = ata_address(&wallet, &input_mint, &TOKEN_PROGRAM);
     let pool_input = Address::new_unique();
-    let pool_output = ata_address(&wallet, &output_mint, &TOKEN_PROGRAM);
-    let user_output = Address::new_unique();
+    let pool_output = Address::new_unique();
+    let user_output = ata_address(&wallet, &output_mint, &TOKEN_PROGRAM);
+    let pool_authority = mock_pool_authority();
 
     let reset_swap_accounts = |svm: &mut LiteSVM| {
         install_token_account(
@@ -4125,13 +4054,13 @@ fn execute_cpi_checked_mock_swap_enforces_max_input_and_min_output() {
             svm,
             pool_output,
             TOKEN_PROGRAM,
-            token_account_data(output_mint, wallet, 500),
+            token_account_data(output_mint, pool_authority, 500),
         );
         install_token_account(
             svm,
             user_output,
             TOKEN_PROGRAM,
-            token_account_data(output_mint, Address::new_unique(), 0),
+            token_account_data(output_mint, wallet, 0),
         );
     };
 
