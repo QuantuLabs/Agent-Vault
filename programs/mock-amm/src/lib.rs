@@ -8,6 +8,8 @@ use pinocchio::{
 };
 
 const POOL_AUTHORITY_SEED: &[u8] = b"pool_authority";
+const POOL_AUTHORITY_BUMP: u8 = 255;
+const PDA_MARKER: &[u8; 21] = b"ProgramDerivedAddress";
 
 #[cfg(not(feature = "no-entrypoint"))]
 pinocchio::program_entrypoint!(process_instruction);
@@ -98,9 +100,7 @@ fn swap_with_pool_authority(
     let input_decimals = data[16];
     let output_decimals = data[17];
 
-    let (expected_pool_authority, bump) =
-        Address::try_find_program_address(&[POOL_AUTHORITY_SEED], program_id)
-            .ok_or(ProgramError::InvalidSeeds)?;
+    let expected_pool_authority = derive_pool_authority(program_id);
     if pool_authority.address() != &expected_pool_authority {
         return Err(ProgramError::InvalidSeeds);
     }
@@ -115,7 +115,7 @@ fn swap_with_pool_authority(
         input_decimals,
     )?;
 
-    let bump_seed = [bump];
+    let bump_seed = [POOL_AUTHORITY_BUMP];
     let seeds = [Seed::from(POOL_AUTHORITY_SEED), Seed::from(&bump_seed)];
     let signer = Signer::from(&seeds);
     transfer_checked_with_signers(
@@ -128,6 +128,17 @@ fn swap_with_pool_authority(
         output_decimals,
         &[signer],
     )
+}
+
+fn derive_pool_authority(program_id: &Address) -> Address {
+    let bump_seed = [POOL_AUTHORITY_BUMP];
+    let hash = solana_sha256_hasher::hashv(&[
+        POOL_AUTHORITY_SEED,
+        &bump_seed,
+        program_id.as_ref(),
+        PDA_MARKER,
+    ]);
+    Address::new_from_array(hash.to_bytes())
 }
 
 fn approve_delegate_checked(accounts: &[AccountView], data: &[u8]) -> ProgramResult {

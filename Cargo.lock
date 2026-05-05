@@ -101,6 +101,7 @@ name = "mock-amm"
 version = "0.1.0"
 dependencies = [
  "pinocchio",
+ "solana-sha256-hasher",
 ]
 
 [[package]]

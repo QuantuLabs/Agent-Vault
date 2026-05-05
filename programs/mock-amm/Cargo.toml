@@ -17,6 +17,7 @@ no-entrypoint = []
 
 [dependencies]
 pinocchio = { version = "0.10", features = ["cpi"] }
+solana-sha256-hasher = { version = "3.1", features = ["sha2"] }
 
 [lints]
 workspace = true
