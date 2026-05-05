@@ -46,6 +46,7 @@ const COVERAGE: &[CoverageRow] = &[
         formal_harnesses: &[
             "global_config_pack_unpack_roundtrip",
             "v0_constants_match_spec_limits_and_tags",
+            "reserved_instruction_discriminators_reject_in_v0",
         ],
     },
     CoverageRow {

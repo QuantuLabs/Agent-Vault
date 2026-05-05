@@ -31,7 +31,10 @@ use crate::{
         VaultConfig, GLOBAL_CONFIG_LEN, PUBKEY_LEN, VAULT_CONFIG_LEN,
         VAULT_CONFIG_WALLET_COUNT_OFFSET, WALLET_LABEL_OFFSET, WALLET_LEN,
     },
-    token_state::{parse_mint, parse_token_account_for_mint, TokenAccount, TOKEN_ACCOUNT_LEN},
+    token_state::{
+        parse_mint, parse_token_account_for_mint, probe_initialized_token_account_custody,
+        TokenAccount, TokenAccountCustodyProbe, TOKEN_ACCOUNT_LEN,
+    },
     validation::{
         assert_associated_token_program, assert_clock_sysvar, assert_native_mint, assert_owned_by,
         assert_rent_sysvar, assert_signer, assert_system_program, assert_token_program_any,
@@ -1250,29 +1253,57 @@ fn enforce_wallet_controlled_token_checks(
     let mut i = 0usize;
     while i < final_accounts.len() {
         if final_metas[i].is_writable {
-            if let Some((mint, kind)) = read_wallet_controlled_token(final_accounts[i], wallet_key)?
-            {
-                let token_index = i as u8;
-                if !*coverage_loaded {
-                    *coverage = wallet_token_post_check_coverage(ix)?;
-                    *coverage_loaded = true;
+            match classify_writable_token_account(final_accounts[i], wallet_key)? {
+                WritableTokenAccount::WalletControlled { mint, kind } => {
+                    let token_index = i as u8;
+                    if !*coverage_loaded {
+                        *coverage = wallet_token_post_check_coverage(ix)?;
+                        *coverage_loaded = true;
+                    }
+                    if !coverage.has_economic(token_index) || !coverage.has_custody(token_index) {
+                        return Err(AgentVaultError::MissingCustodyPostCheck.into());
+                    }
+                    let expected_ata = derive_associated_token_account(
+                        &Address::new_from_array(*wallet_key),
+                        &Address::new_from_array(mint),
+                        token_program_address(kind),
+                    )?;
+                    if final_accounts[i].address() != &expected_ata.address {
+                        return Err(AgentVaultError::InvalidAta.into());
+                    }
                 }
-                if !coverage.has_economic(token_index) || !coverage.has_custody(token_index) {
-                    return Err(AgentVaultError::MissingCustodyPostCheck.into());
+                WritableTokenAccount::TokenOwnedNonAccount => {
+                    let token_index = i as u8;
+                    if !*coverage_loaded {
+                        *coverage = wallet_token_post_check_coverage(ix)?;
+                        *coverage_loaded = true;
+                    }
+                    if coverage.has_economic(token_index) || coverage.has_custody(token_index) {
+                        return Err(AgentVaultError::InvalidTokenAccount.into());
+                    }
+                    let owner = account_owner_bytes(final_accounts[i]);
+                    if !post_checks_cover_account_state(ix, i as u8, &owner)? {
+                        return Err(AgentVaultError::MissingCustodyPostCheck.into());
+                    }
                 }
-                let expected_ata = derive_associated_token_account(
-                    &Address::new_from_array(*wallet_key),
-                    &Address::new_from_array(mint),
-                    token_program_address(kind),
-                )?;
-                if final_accounts[i].address() != &expected_ata.address {
-                    return Err(AgentVaultError::InvalidAta.into());
-                }
+                WritableTokenAccount::NonWalletTokenAccount
+                | WritableTokenAccount::NotTokenOwned => {}
             }
         }
         i += 1;
     }
     Ok(())
+}
+
+#[derive(Clone, Copy)]
+enum WritableTokenAccount {
+    WalletControlled {
+        mint: [u8; PUBKEY_LEN],
+        kind: TokenProgramKind,
+    },
+    NonWalletTokenAccount,
+    TokenOwnedNonAccount,
+    NotTokenOwned,
 }
 
 #[derive(Clone, Copy)]
@@ -1360,24 +1391,30 @@ fn enforce_writable_non_token_owner_checks(
     Ok(())
 }
 
-fn read_wallet_controlled_token(
+fn classify_writable_token_account(
     account: &AccountView,
     wallet_key: &[u8; PUBKEY_LEN],
-) -> Result<Option<([u8; PUBKEY_LEN], TokenProgramKind)>, ProgramError> {
+) -> Result<WritableTokenAccount, ProgramError> {
     let kind = if account.owned_by(&TOKEN_PROGRAM_ID) {
         TokenProgramKind::Tokenkeg
     } else if account.owned_by(&TOKEN_2022_PROGRAM_ID) {
         TokenProgramKind::Token2022
     } else {
-        return Ok(None);
+        return Ok(WritableTokenAccount::NotTokenOwned);
     };
     let data = account.try_borrow()?;
-    let token = crate::token_state::parse_token_account(&data, kind, true)?;
-    if token_account_has_wallet_custody(&token, wallet_key) {
-        Ok(Some((token.mint, kind)))
-    } else {
-        Ok(None)
+    let Some(probe) = probe_initialized_token_account_custody(&data, kind)? else {
+        return Ok(WritableTokenAccount::TokenOwnedNonAccount);
+    };
+    if !token_probe_has_wallet_custody(&probe, wallet_key) {
+        return Ok(WritableTokenAccount::NonWalletTokenAccount);
     }
+
+    let token = crate::token_state::parse_token_account(&data, kind, true)?;
+    Ok(WritableTokenAccount::WalletControlled {
+        mint: token.mint,
+        kind,
+    })
 }
 
 fn post_checks_cover_account_state(
@@ -1701,6 +1738,15 @@ fn token_account_has_wallet_custody(
         || optional_pubkey_equals(&account.delegate, wallet_key)
 }
 
+fn token_probe_has_wallet_custody(
+    account: &TokenAccountCustodyProbe,
+    wallet_key: &[u8; PUBKEY_LEN],
+) -> bool {
+    account.authority == *wallet_key
+        || optional_pubkey_equals(&account.close_authority, wallet_key)
+        || optional_pubkey_equals(&account.delegate, wallet_key)
+}
+
 const TOKEN_ACCOUNT_MINT_OFFSET: usize = 0;
 const TOKEN_ACCOUNT_AUTHORITY_OFFSET: usize = 32;
 const TOKEN_ACCOUNT_DELEGATE_OFFSET: usize = 72;
@@ -1729,13 +1775,13 @@ fn validate_wsol_ata(
         &data[TOKEN_ACCOUNT_CLOSE_AUTHORITY_OFFSET..TOKEN_ACCOUNT_CLOSE_AUTHORITY_OFFSET + 4];
     let close_authority_ok = close_authority_tag == SPL_COPTION_NONE
         || (close_authority_tag == SPL_COPTION_SOME
-            && &data[TOKEN_ACCOUNT_CLOSE_AUTHORITY_OFFSET + 4
+            && data[TOKEN_ACCOUNT_CLOSE_AUTHORITY_OFFSET + 4
                 ..TOKEN_ACCOUNT_CLOSE_AUTHORITY_OFFSET + 4 + PUBKEY_LEN]
                 == wallet_key);
 
     if &data[TOKEN_ACCOUNT_MINT_OFFSET..TOKEN_ACCOUNT_MINT_OFFSET + PUBKEY_LEN]
         != NATIVE_MINT_ID.as_ref()
-        || &data[TOKEN_ACCOUNT_AUTHORITY_OFFSET..TOKEN_ACCOUNT_AUTHORITY_OFFSET + PUBKEY_LEN]
+        || data[TOKEN_ACCOUNT_AUTHORITY_OFFSET..TOKEN_ACCOUNT_AUTHORITY_OFFSET + PUBKEY_LEN]
             != wallet_key
         || data[TOKEN_ACCOUNT_STATE_OFFSET] != SPL_TOKEN_STATE_INITIALIZED
         || &data[TOKEN_ACCOUNT_DELEGATE_OFFSET..TOKEN_ACCOUNT_DELEGATE_OFFSET + 4]

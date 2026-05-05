@@ -297,6 +297,14 @@ pub struct TokenAccount<'a> {
     pub extensions: TokenAccountExtensionPolicy<'a>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TokenAccountCustodyProbe {
+    pub mint: [u8; PUBKEY_LEN],
+    pub authority: [u8; PUBKEY_LEN],
+    pub delegate: OptionalPubkey,
+    pub close_authority: OptionalPubkey,
+}
+
 pub fn parse_mint(
     data: &[u8],
     token_program_kind: TokenProgramKind,
@@ -384,6 +392,39 @@ pub fn parse_token_account(
     })
 }
 
+pub fn probe_initialized_token_account_custody(
+    data: &[u8],
+    token_program_kind: TokenProgramKind,
+) -> Result<Option<TokenAccountCustodyProbe>, ProgramError> {
+    if !looks_like_initialized_token_account(data, token_program_kind) {
+        return Ok(None);
+    }
+
+    let mint = match read_pubkey(data, ACCOUNT_MINT_OFFSET) {
+        Ok(value) => value,
+        Err(_) => return Ok(None),
+    };
+    let authority = match read_pubkey(data, ACCOUNT_AUTHORITY_OFFSET) {
+        Ok(value) => value,
+        Err(_) => return Ok(None),
+    };
+    let delegate = match read_coption_pubkey(data, ACCOUNT_DELEGATE_OFFSET) {
+        Ok(value) => value,
+        Err(_) => return Ok(None),
+    };
+    let close_authority = match read_coption_pubkey(data, ACCOUNT_CLOSE_AUTHORITY_OFFSET) {
+        Ok(value) => value,
+        Err(_) => return Ok(None),
+    };
+
+    Ok(Some(TokenAccountCustodyProbe {
+        mint,
+        authority,
+        delegate,
+        close_authority,
+    }))
+}
+
 #[inline(always)]
 pub fn unpack_token_account(
     data: &[u8],
@@ -403,6 +444,34 @@ pub fn parse_token_account_for_mint<'a>(
         data,
         token_program_kind,
         mint.extensions.has_transfer_fee_config(),
+    )
+}
+
+fn looks_like_initialized_token_account(data: &[u8], token_program_kind: TokenProgramKind) -> bool {
+    match token_program_kind {
+        TokenProgramKind::Tokenkeg => {
+            if data.len() != TOKEN_ACCOUNT_LEN {
+                return false;
+            }
+        }
+        TokenProgramKind::Token2022 => {
+            if data.len() < TOKEN_ACCOUNT_LEN || data.len() == MULTISIG_LEN {
+                return false;
+            }
+            if data.len() > TOKEN_ACCOUNT_LEN {
+                if data.len() <= TOKEN_2022_ACCOUNT_TYPE_OFFSET {
+                    return false;
+                }
+                if data[TOKEN_2022_ACCOUNT_TYPE_OFFSET] != TOKEN_2022_ACCOUNT_TYPE_ACCOUNT {
+                    return false;
+                }
+            }
+        }
+    }
+
+    matches!(
+        data.get(ACCOUNT_STATE_OFFSET),
+        Some(&TOKEN_STATE_INITIALIZED)
     )
 }
 

@@ -19,7 +19,7 @@ pub fn process_instruction(
     accounts: &[AccountView],
     data: &[u8],
 ) -> ProgramResult {
-    if accounts.len() == 1 && data.len() == 1 && data[0] == 0 {
+    if data.len() == 1 && data[0] == 0 {
         return Ok(());
     }
     if accounts.len() == 5 && data.len() == 10 && data[0] == 1 {

@@ -15,7 +15,8 @@ Release status:    deployed candidate
 The release manifest is tracked in
 [`docs/RELEASE_MANIFEST.devnet.json`](./RELEASE_MANIFEST.devnet.json). SDK and
 release tooling should verify the program account, ProgramData account, deployed
-ELF hash, global config PDA, and expected global config fields against that
+ELF hash and size, ProgramData address, ProgramData upgrade authority, global
+config PDA, global config bump, and expected global config fields against that
 manifest before treating the deployment as canonical.
 
 ## Verify Locally

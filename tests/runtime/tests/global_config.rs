@@ -70,7 +70,7 @@ const SHA256_EMPTY: [u8; 32] = [
 const CU_REGRESSION_BPS: u64 = 1_000;
 // Baselines use the max observed value between isolated and full-suite LiteSVM runs.
 const CU_BASELINE_INITIALIZE_GLOBAL_CONFIG: u64 = 5_407;
-const CU_BASELINE_INIT_VAULT_CONFIG: u64 = 14_998;
+const CU_BASELINE_INIT_VAULT_CONFIG: u64 = 14_989;
 const CU_BASELINE_CREATE_WALLET: u64 = 12_610;
 const CU_BASELINE_CREATE_WALLET_SECOND: u64 = 9_610;
 const CU_BASELINE_UPDATE_WALLET_LABEL: u64 = 6_321;
@@ -82,9 +82,9 @@ const CU_BASELINE_TRANSFER_SPL: u64 = 21_824;
 const CU_BASELINE_CLOSE_WALLET_ATA: u64 = 17_953;
 const CU_BASELINE_WRAP_SOL: u64 = 11_317;
 const CU_BASELINE_UNWRAP_SOL: u64 = 15_471;
-const CU_BASELINE_EXECUTE_CPI_CHECKED_MEMO: u64 = 28_604;
-const CU_BASELINE_EXECUTE_CPI_CHECKED_NOOP: u64 = 9_567;
-const CU_BASELINE_EXECUTE_CPI_CHECKED_MOCK_SWAP: u64 = 65_269;
+const CU_BASELINE_EXECUTE_CPI_CHECKED_MEMO: u64 = 28_564;
+const CU_BASELINE_EXECUTE_CPI_CHECKED_NOOP: u64 = 9_523;
+const CU_BASELINE_EXECUTE_CPI_CHECKED_MOCK_SWAP: u64 = 65_829;
 const CU_BASELINE_CLOSE_WALLET: u64 = 6_255;
 const CU_BASELINE_REOPEN_WALLET_FOR_RECOVERY: u64 = 14_428;
 
@@ -138,6 +138,10 @@ fn registry_agent_pda(agent_asset: &Address) -> (Address, u8) {
 
 fn rent_minimum(data_len: usize) -> u64 {
     Rent::default().minimum_balance(data_len)
+}
+
+fn active_rent_minimum(svm: &LiteSVM, data_len: usize) -> u64 {
+    svm.get_sysvar::<Rent>().minimum_balance(data_len)
 }
 
 fn token_account_rent() -> u64 {
@@ -345,6 +349,13 @@ fn transfer_fee_amount_extension_hash(withheld_amount: u64) -> [u8; 32] {
     let payload_len = 8u16.to_le_bytes();
     let payload = withheld_amount.to_le_bytes();
     let hash = solana_sha256_hasher::hashv(&[&extension_type, &payload_len, &payload]);
+    let mut out = [0u8; 32];
+    out.copy_from_slice(hash.as_ref());
+    out
+}
+
+fn sha256_bytes(data: &[u8]) -> [u8; 32] {
+    let hash = solana_sha256_hasher::hashv(&[data]);
     let mut out = [0u8; 32];
     out.copy_from_slice(hash.as_ref());
     out
@@ -947,6 +958,40 @@ fn execute_cpi_checked_noop_ix(
     }
 }
 
+fn execute_cpi_checked_noop_with_writable_account_ix(
+    agent_asset: Address,
+    vault_config: Address,
+    wallet: Address,
+    writable_account: Address,
+    min_wallet_lamports: u64,
+) -> Instruction {
+    let mut data = Vec::with_capacity(1 + 6 + 1 + 1 + 10);
+    data.push(TAG_EXECUTE_CPI_CHECKED);
+    data.extend_from_slice(&0u16.to_le_bytes());
+    data.push(0);
+    data.push(1);
+    data.extend_from_slice(&1u16.to_le_bytes());
+    data.push(0);
+    data.push(1);
+    data.push(0);
+    data.push(0);
+    data.extend_from_slice(&min_wallet_lamports.to_le_bytes());
+
+    Instruction {
+        program_id: PROGRAM_ID,
+        accounts: vec![
+            AccountMeta::new_readonly(INITIALIZER, true),
+            AccountMeta::new_readonly(global_config_pda(), false),
+            AccountMeta::new_readonly(vault_config, false),
+            AccountMeta::new_readonly(wallet, false),
+            AccountMeta::new_readonly(agent_asset, false),
+            AccountMeta::new_readonly(MOCK_AMM_PROGRAM, false),
+            AccountMeta::new(writable_account, false),
+        ],
+        data,
+    }
+}
+
 fn execute_cpi_checked_wsol_balance_ix(
     agent_asset: Address,
     vault_config: Address,
@@ -1034,6 +1079,32 @@ fn execute_cpi_checked_writable_account_state_ix(
     include_state_check: bool,
     min_wallet_lamports: u64,
 ) -> Instruction {
+    execute_cpi_checked_writable_account_state_snapshot_ix(
+        agent_asset,
+        vault_config,
+        wallet,
+        writable_account,
+        writable_account_owner,
+        include_state_check,
+        min_wallet_lamports,
+        1,
+        0,
+        SHA256_EMPTY,
+    )
+}
+
+fn execute_cpi_checked_writable_account_state_snapshot_ix(
+    agent_asset: Address,
+    vault_config: Address,
+    wallet: Address,
+    writable_account: Address,
+    writable_account_owner: Address,
+    include_state_check: bool,
+    min_wallet_lamports: u64,
+    expected_lamports: u64,
+    expected_data_len: u32,
+    expected_data_hash: [u8; 32],
+) -> Instruction {
     let memo = b"state-check";
     let mut data = Vec::with_capacity(1 + 6 + memo.len() + 1 + 10 + 78);
     data.push(TAG_EXECUTE_CPI_CHECKED);
@@ -1050,9 +1121,9 @@ fn execute_cpi_checked_writable_account_state_ix(
         data.push(12);
         data.push(1);
         data.extend_from_slice(writable_account_owner.as_ref());
-        data.extend_from_slice(&1u64.to_le_bytes());
-        data.extend_from_slice(&0u32.to_le_bytes());
-        data.extend_from_slice(&SHA256_EMPTY);
+        data.extend_from_slice(&expected_lamports.to_le_bytes());
+        data.extend_from_slice(&expected_data_len.to_le_bytes());
+        data.extend_from_slice(&expected_data_hash);
     }
 
     Instruction {
@@ -2405,7 +2476,7 @@ fn rent_snapshots_match_active_rent() {
 
     assert_eq!(
         svm.get_balance(&global_config_pda()).unwrap(),
-        rent_minimum(GLOBAL_CONFIG_LEN)
+        active_rent_minimum(&svm, GLOBAL_CONFIG_LEN)
     );
 
     let agent_asset = Address::new_unique();
@@ -2417,7 +2488,7 @@ fn rent_snapshots_match_active_rent() {
     .unwrap();
     assert_eq!(
         svm.get_balance(&vault_config).unwrap(),
-        rent_minimum(VAULT_CONFIG_LEN)
+        active_rent_minimum(&svm, VAULT_CONFIG_LEN)
     );
 
     let wallet = wallet_pda(&agent_asset, 0);
@@ -2426,7 +2497,10 @@ fn rent_snapshots_match_active_rent() {
         create_wallet_ix(agent_asset, vault_config, wallet),
     )
     .unwrap();
-    assert_eq!(svm.get_balance(&wallet).unwrap(), rent_minimum(WALLET_LEN));
+    assert_eq!(
+        svm.get_balance(&wallet).unwrap(),
+        active_rent_minimum(&svm, WALLET_LEN)
+    );
 
     let mint = Address::new_unique();
     install_mint(&mut svm, mint, TOKEN_PROGRAM, 6);
@@ -2438,7 +2512,7 @@ fn rent_snapshots_match_active_rent() {
     assert_eq!(
         svm.get_balance(&ata_address(&wallet, &mint, &TOKEN_PROGRAM))
             .unwrap(),
-        token_account_rent()
+        active_rent_minimum(&svm, TOKEN_ACCOUNT_LEN)
     );
 }
 
@@ -2676,10 +2750,19 @@ fn devnet_release_cost_report() {
 
     println!("agent-vault devnet cost report");
     println!("activation_fee_lamports={EXPECTED_ACTIVATION_FEE_LAMPORTS}");
-    println!("rent_global_config_160={}", rent_minimum(GLOBAL_CONFIG_LEN));
-    println!("rent_vault_config_24={}", rent_minimum(VAULT_CONFIG_LEN));
-    println!("rent_wallet_32={}", rent_minimum(WALLET_LEN));
-    println!("rent_token_account_165={}", token_account_rent());
+    println!(
+        "rent_global_config_160={}",
+        active_rent_minimum(&svm, GLOBAL_CONFIG_LEN)
+    );
+    println!(
+        "rent_vault_config_24={}",
+        active_rent_minimum(&svm, VAULT_CONFIG_LEN)
+    );
+    println!("rent_wallet_32={}", active_rent_minimum(&svm, WALLET_LEN));
+    println!(
+        "rent_token_account_165={}",
+        active_rent_minimum(&svm, TOKEN_ACCOUNT_LEN)
+    );
     println!("cu_initialize_global_config={initialize_global_config_cu}");
     println!("cu_init_vault_config={init_vault_cu}");
     println!("cu_create_wallet={create_wallet_cu}");
@@ -3773,6 +3856,98 @@ fn execute_cpi_checked_requires_state_checks_for_writable_non_token_accounts() {
             writable_account,
             SYSTEM_PROGRAM,
             true,
+            min_wallet_lamports,
+        ),
+    )
+    .unwrap();
+}
+
+#[test]
+fn execute_cpi_checked_requires_state_checks_for_writable_token_owned_non_accounts() {
+    let mut svm = runtime();
+    initialize_global_config(&mut svm);
+    svm.airdrop(&FEE_TREASURY, 1).unwrap();
+
+    let agent_asset = Address::new_unique();
+    let (vault_config, wallet) = create_agent_vault_and_wallet(&mut svm, agent_asset);
+    let min_wallet_lamports = svm.get_balance(&wallet).unwrap();
+    let writable_mint = Address::new_unique();
+    install_mint(&mut svm, writable_mint, TOKEN_PROGRAM, 6);
+    let mint_account = svm.get_account(&writable_mint).unwrap();
+
+    let missing_state_check = send_unsigned_tx(
+        &mut svm,
+        execute_cpi_checked_writable_account_state_snapshot_ix(
+            agent_asset,
+            vault_config,
+            wallet,
+            writable_mint,
+            TOKEN_PROGRAM,
+            false,
+            min_wallet_lamports,
+            mint_account.lamports,
+            mint_account.data.len() as u32,
+            sha256_bytes(&mint_account.data),
+        ),
+    )
+    .unwrap_err();
+    assert_eq!(
+        missing_state_check,
+        TransactionError::InstructionError(
+            0,
+            InstructionError::Custom(AgentVaultError::MissingCustodyPostCheck as u32),
+        )
+    );
+
+    send_unsigned_tx(
+        &mut svm,
+        execute_cpi_checked_writable_account_state_snapshot_ix(
+            agent_asset,
+            vault_config,
+            wallet,
+            writable_mint,
+            TOKEN_PROGRAM,
+            true,
+            min_wallet_lamports,
+            mint_account.lamports,
+            mint_account.data.len() as u32,
+            sha256_bytes(&mint_account.data),
+        ),
+    )
+    .unwrap();
+}
+
+#[test]
+fn execute_cpi_checked_allows_non_wallet_token_accounts_with_third_party_extensions() {
+    let mut svm = runtime();
+    install_mock_amm(&mut svm);
+    initialize_global_config(&mut svm);
+    svm.airdrop(&FEE_TREASURY, 1).unwrap();
+
+    let agent_asset = Address::new_unique();
+    let (vault_config, wallet) = create_agent_vault_and_wallet(&mut svm, agent_asset);
+    let min_wallet_lamports = svm.get_balance(&wallet).unwrap();
+    let mint = Address::new_unique();
+    install_mint(&mut svm, mint, TOKEN_2022_PROGRAM, 6);
+    let non_wallet_token = Address::new_unique();
+    let mut token_data = vec![0u8; TOKEN_ACCOUNT_LEN + 1 + 4];
+    token_data[0..TOKEN_ACCOUNT_LEN].copy_from_slice(&token_account_data(
+        mint,
+        Address::new_unique(),
+        1,
+    ));
+    token_data[TOKEN_ACCOUNT_LEN] = 2;
+    token_data[TOKEN_ACCOUNT_LEN + 1..TOKEN_ACCOUNT_LEN + 3].copy_from_slice(&99u16.to_le_bytes());
+    token_data[TOKEN_ACCOUNT_LEN + 3..TOKEN_ACCOUNT_LEN + 5].copy_from_slice(&0u16.to_le_bytes());
+    install_token_account(&mut svm, non_wallet_token, TOKEN_2022_PROGRAM, token_data);
+
+    send_unsigned_tx(
+        &mut svm,
+        execute_cpi_checked_noop_with_writable_account_ix(
+            agent_asset,
+            vault_config,
+            wallet,
+            non_wallet_token,
             min_wallet_lamports,
         ),
     )

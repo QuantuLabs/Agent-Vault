@@ -137,6 +137,16 @@ fn v0_constants_match_spec_limits_and_tags() {
 }
 
 #[kani::proof]
+fn reserved_instruction_discriminators_reject_in_v0() {
+    let tag: u8 = kani::any();
+    kani::assume(tag >= 65);
+    kani::assume(tag <= 95);
+    let data = [tag];
+
+    assert!(parse_instruction(&data).is_err());
+}
+
+#[kani::proof]
 fn agent_wallet_index_seed_is_u16_little_endian() {
     let index: u16 = kani::any();
 
