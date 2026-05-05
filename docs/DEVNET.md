@@ -55,12 +55,15 @@ npm run e2e:devnet
 deployment and exits before any write. Set `AGENT_VAULT_E2E_SEND=1` only when
 the signer is funded and you intentionally want to run the live write flow.
 
-## Devnet Flow Coverage
+## Flow Coverage
 
-The SDK devnet e2e covers the full V0 instruction surface when send mode is
-enabled. `initialize_global_config` is sent only when
-`AGENT_VAULT_INIT_GLOBAL=1` creates a missing global config; otherwise the e2e
-counts it as deployment-verified by the live global-config preflight:
+The program repo covers the full V0 program instruction surface through LiteSVM
+runtime tests and `scripts/localnet-e2e.py`. The separate Agent-Vault-SDK repo
+provides devnet preflight against the live deployment and gated send-mode
+coverage for SDK transaction construction. `initialize_global_config` is sent
+by SDK devnet e2e only when `AGENT_VAULT_INIT_GLOBAL=1` creates a missing
+global config; otherwise the e2e counts it as deployment-verified by the live
+global-config preflight:
 
 ```text
 initialize_global_config

@@ -1853,6 +1853,14 @@ fn validate_wsol_ata(
     {
         return Err(AgentVaultError::InvalidWsolAccount.into());
     }
+    let native_reserve = u64::from_le_bytes(
+        data[TOKEN_ACCOUNT_IS_NATIVE_OFFSET + 4..TOKEN_ACCOUNT_IS_NATIVE_OFFSET + 12]
+            .try_into()
+            .map_err(|_| AgentVaultError::InvalidWsolAccount)?,
+    );
+    if wallet_wsol_ata.lamports() < native_reserve {
+        return Err(AgentVaultError::InvalidWsolAccount.into());
+    }
     Ok(())
 }
 

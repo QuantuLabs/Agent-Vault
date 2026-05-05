@@ -24,8 +24,8 @@ use {
         },
         state::{
             unpack_global_config, unpack_vault_config, unpack_wallet, GLOBAL_CONFIG_FEE_OFFSET,
-            GLOBAL_CONFIG_LEN, GLOBAL_CONFIG_REGISTRY_PROGRAM_OFFSET,
-            VAULT_CONFIG_WALLET_COUNT_OFFSET, VAULT_CONFIG_LEN, WALLET_LEN,
+            GLOBAL_CONFIG_LEN, GLOBAL_CONFIG_REGISTRY_PROGRAM_OFFSET, VAULT_CONFIG_LEN,
+            VAULT_CONFIG_WALLET_COUNT_OFFSET, WALLET_LEN,
         },
     },
     litesvm::LiteSVM,
@@ -64,9 +64,8 @@ const TOKEN_MINT_LEN: usize = 82;
 const TOKEN_ACCOUNT_LEN: usize = 165;
 const TOKEN_MULTISIG_LEN: usize = 355;
 const SHA256_EMPTY: [u8; 32] = [
-    0xe3, 0xb0, 0xc4, 0x42, 0x98, 0xfc, 0x1c, 0x14, 0x9a, 0xfb, 0xf4, 0xc8, 0x99, 0x6f, 0xb9,
-    0x24, 0x27, 0xae, 0x41, 0xe4, 0x64, 0x9b, 0x93, 0x4c, 0xa4, 0x95, 0x99, 0x1b, 0x78, 0x52,
-    0xb8, 0x55,
+    0xe3, 0xb0, 0xc4, 0x42, 0x98, 0xfc, 0x1c, 0x14, 0x9a, 0xfb, 0xf4, 0xc8, 0x99, 0x6f, 0xb9, 0x24,
+    0x27, 0xae, 0x41, 0xe4, 0x64, 0x9b, 0x93, 0x4c, 0xa4, 0x95, 0x99, 0x1b, 0x78, 0x52, 0xb8, 0x55,
 ];
 const CU_REGRESSION_BPS: u64 = 1_000;
 // Baselines use the max observed value between isolated and full-suite LiteSVM runs.
@@ -85,12 +84,12 @@ const CU_BASELINE_WRAP_SOL: u64 = 14_309;
 const CU_BASELINE_UNWRAP_SOL: u64 = 18_463;
 const CU_BASELINE_EXECUTE_CPI_CHECKED_MEMO: u64 = 28_568;
 const CU_BASELINE_EXECUTE_CPI_CHECKED_NOOP: u64 = 9_527;
-const CU_BASELINE_EXECUTE_CPI_CHECKED_MOCK_SWAP: u64 = 68_455;
+const CU_BASELINE_EXECUTE_CPI_CHECKED_MOCK_SWAP: u64 = 68_458;
 const CU_BASELINE_CLOSE_WALLET: u64 = 6_255;
 const CU_BASELINE_REOPEN_WALLET_FOR_RECOVERY: u64 = 14_428;
 
 fn assert_cu_regression(label: &str, actual: u64, baseline: u64) {
-    let allowed = baseline + ((baseline * CU_REGRESSION_BPS) + 9_999) / 10_000;
+    let allowed = baseline + (baseline * CU_REGRESSION_BPS).div_ceil(10_000);
     assert!(
         actual <= allowed,
         "{label} CU regression: actual={actual} baseline={baseline} allowed={allowed}"
@@ -204,14 +203,14 @@ fn send_unsigned_tx(svm: &mut LiteSVM, ix: Instruction) -> Result<u64, Transacti
 
 fn runtime() -> LiteSVM {
     let mut svm = LiteSVM::new().with_sigverify(false);
-    svm.add_program_from_file(PROGRAM_ID, &program_so_path())
+    svm.add_program_from_file(PROGRAM_ID, program_so_path())
         .unwrap();
     svm.airdrop(&INITIALIZER, 10_000_000_000).unwrap();
     svm
 }
 
 fn install_executable_account(svm: &mut LiteSVM, program: Address) {
-    svm.add_program_from_file(program, &program_so_path())
+    svm.add_program_from_file(program, program_so_path())
         .unwrap();
 }
 
@@ -230,7 +229,7 @@ fn install_executable_marker_account(svm: &mut LiteSVM, program: Address) {
 }
 
 fn install_mock_amm(svm: &mut LiteSVM) {
-    svm.add_program_from_file(MOCK_AMM_PROGRAM, &mock_amm_so_path())
+    svm.add_program_from_file(MOCK_AMM_PROGRAM, mock_amm_so_path())
         .unwrap();
 }
 
@@ -397,7 +396,6 @@ fn token_2022_account_multisig_len_collision_data(
     data
 }
 
-
 fn transfer_fee_amount_extension_hash(withheld_amount: u64) -> [u8; 32] {
     let extension_type = 2u16.to_le_bytes();
     let payload_len = 8u16.to_le_bytes();
@@ -462,6 +460,7 @@ fn malformed_wsol_account_data_cases(wallet: Address, native_reserve: u64) -> Ve
 
     vec![
         token_account_data(NATIVE_MINT, wallet, 0),
+        native_token_account_data(NATIVE_MINT, wallet, 0, native_reserve + 1),
         native_token_account_data(Address::new_unique(), wallet, 0, native_reserve),
         native_token_account_data(NATIVE_MINT, Address::new_unique(), 0, native_reserve),
         native_token_account_data_with_close_authority(
@@ -804,6 +803,7 @@ fn create_wallet_ata_ix(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn transfer_spl_ix(
     agent_asset: Address,
     vault_config: Address,
@@ -1184,6 +1184,7 @@ fn execute_cpi_checked_writable_account_state_ix(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn execute_cpi_checked_writable_account_state_snapshot_ix(
     agent_asset: Address,
     vault_config: Address,
@@ -1700,7 +1701,11 @@ fn initializes_global_config_from_devnet_manifest_constants() {
         initialize_global_config_ix(EXPECTED_ACTIVATION_FEE_LAMPORTS),
     )
     .unwrap();
-    assert_cu_regression("initialize_global_config", cu, CU_BASELINE_INITIALIZE_GLOBAL_CONFIG);
+    assert_cu_regression(
+        "initialize_global_config",
+        cu,
+        CU_BASELINE_INITIALIZE_GLOBAL_CONFIG,
+    );
 
     let account = svm.get_account(&global_config_pda()).unwrap();
     assert_eq!(account.owner, PROGRAM_ID);
@@ -1833,7 +1838,10 @@ fn global_config_init_handles_dusted_pdas_and_rejects_squatters() {
         initialize_global_config_ix(EXPECTED_ACTIVATION_FEE_LAMPORTS),
     )
     .unwrap();
-    assert_eq!(dusted.get_account(&global_config_pda()).unwrap().owner, PROGRAM_ID);
+    assert_eq!(
+        dusted.get_account(&global_config_pda()).unwrap().owner,
+        PROGRAM_ID
+    );
 
     let mut data_squatter = runtime();
     data_squatter
@@ -2141,12 +2149,15 @@ fn init_vault_config_rejects_malformed_registry_agent_account() {
         let (vault_config, agent_account) = install_agent_fixture(&mut svm, agent_asset);
         let mut account = svm.get_account(&agent_account).unwrap();
         match mutate {
-            0 => account.data[AGENT_ACCOUNT_COLLECTION_OFFSET..AGENT_ACCOUNT_COLLECTION_OFFSET + 32]
+            0 => account.data
+                [AGENT_ACCOUNT_COLLECTION_OFFSET..AGENT_ACCOUNT_COLLECTION_OFFSET + 32]
                 .copy_from_slice(Address::new_unique().as_ref()),
             1 => account.data[AGENT_ACCOUNT_ASSET_OFFSET..AGENT_ACCOUNT_ASSET_OFFSET + 32]
                 .copy_from_slice(Address::new_unique().as_ref()),
-            2 => account.data[AGENT_ACCOUNT_BUMP_OFFSET] =
-                account.data[AGENT_ACCOUNT_BUMP_OFFSET].wrapping_add(1),
+            2 => {
+                account.data[AGENT_ACCOUNT_BUMP_OFFSET] =
+                    account.data[AGENT_ACCOUNT_BUMP_OFFSET].wrapping_add(1)
+            }
             _ => account.data.truncate(AGENT_ACCOUNT_MIN_LEN - 1),
         }
         svm.set_account(agent_account, account).unwrap();
@@ -2499,7 +2510,11 @@ fn init_create_deposit_and_withdraw_sol_flow() {
         init_vault_config_ix(agent_asset, vault_config, agent_account),
     )
     .unwrap();
-    assert_cu_regression("init_vault_config", init_vault_cu, CU_BASELINE_INIT_VAULT_CONFIG);
+    assert_cu_regression(
+        "init_vault_config",
+        init_vault_cu,
+        CU_BASELINE_INIT_VAULT_CONFIG,
+    );
 
     let vault_account = svm.get_account(&vault_config).unwrap();
     assert_eq!(vault_account.owner, PROGRAM_ID);
@@ -2905,14 +2920,16 @@ fn devnet_release_cost_report() {
     println!("cu_execute_cpi_checked_noop_baseline={execute_cpi_noop_cu}");
     println!("cu_execute_cpi_checked_mock_swap={execute_cpi_mock_swap_cu}");
     println!("full_transaction_cu_execute_cpi_checked_mock_swap={execute_cpi_mock_swap_cu}");
-    println!(
-        "agent_vault_overhead_cu_execute_cpi_checked_mock_swap={execute_cpi_noop_cu}"
-    );
+    println!("agent_vault_overhead_cu_execute_cpi_checked_mock_swap={execute_cpi_noop_cu}");
     println!("target_program_cu_execute_cpi_checked_mock_swap={execute_cpi_mock_swap_target_cu}");
     println!("cu_close_wallet={close_wallet_cu}");
     println!("cu_reopen_wallet_for_recovery={reopen_cu}");
 
-    assert_cu_regression("init_vault_config", init_vault_cu, CU_BASELINE_INIT_VAULT_CONFIG);
+    assert_cu_regression(
+        "init_vault_config",
+        init_vault_cu,
+        CU_BASELINE_INIT_VAULT_CONFIG,
+    );
     assert_cu_regression(
         "initialize_global_config",
         initialize_global_config_cu,
@@ -2966,7 +2983,6 @@ fn devnet_release_cost_report() {
         reopen_cu,
         CU_BASELINE_REOPEN_WALLET_FOR_RECOVERY,
     );
-
 }
 
 #[test]
@@ -3182,11 +3198,7 @@ fn execute_cpi_checked_rejects_denied_target_programs() {
     let mut svm = runtime();
     initialize_global_config(&mut svm);
     svm.airdrop(&FEE_TREASURY, 1).unwrap();
-    for program in [
-        TOKEN_PROGRAM,
-        TOKEN_2022_PROGRAM,
-        ASSOCIATED_TOKEN_PROGRAM,
-    ] {
+    for program in [TOKEN_PROGRAM, TOKEN_2022_PROGRAM, ASSOCIATED_TOKEN_PROGRAM] {
         install_executable_account(&mut svm, program);
     }
     for program in [
@@ -3872,7 +3884,10 @@ fn execute_cpi_checked_rejects_actual_token_custody_mutation() {
     let account = svm.get_account(&wallet_ata).unwrap();
     assert_eq!(token_amount(&svm, &wallet_ata), 10);
     assert_eq!(&account.data[72..76], &[0, 0, 0, 0]);
-    assert_eq!(u64::from_le_bytes(account.data[121..129].try_into().unwrap()), 0);
+    assert_eq!(
+        u64::from_le_bytes(account.data[121..129].try_into().unwrap()),
+        0
+    );
 }
 
 #[test]
@@ -3916,7 +3931,10 @@ fn execute_cpi_checked_token_custody_equals_supports_new_wallet_control() {
             InstructionError::Custom(AgentVaultError::PostCheckFailed as u32),
         )
     );
-    assert_eq!(&svm.get_account(&wallet_ata).unwrap().data[32..64], current_authority.as_ref());
+    assert_eq!(
+        &svm.get_account(&wallet_ata).unwrap().data[32..64],
+        current_authority.as_ref()
+    );
 
     send_unsigned_tx(
         &mut svm,
@@ -3931,7 +3949,10 @@ fn execute_cpi_checked_token_custody_equals_supports_new_wallet_control() {
         ),
     )
     .unwrap();
-    assert_eq!(&svm.get_account(&wallet_ata).unwrap().data[32..64], wallet.as_ref());
+    assert_eq!(
+        &svm.get_account(&wallet_ata).unwrap().data[32..64],
+        wallet.as_ref()
+    );
 }
 
 #[test]
@@ -4206,12 +4227,7 @@ fn wsol_wrap_swap_and_unwrap_composes_with_checked_cpi() {
         pool_input,
         Account {
             lamports: native_reserve,
-            data: native_token_account_data(
-                NATIVE_MINT,
-                Address::new_unique(),
-                0,
-                native_reserve,
-            ),
+            data: native_token_account_data(NATIVE_MINT, Address::new_unique(), 0, native_reserve),
             owner: TOKEN_PROGRAM,
             ..Default::default()
         },
@@ -4261,7 +4277,10 @@ fn wsol_wrap_swap_and_unwrap_composes_with_checked_cpi() {
     assert_eq!(token_amount(&svm, &pool_input), 250_000);
     assert_eq!(token_amount(&svm, &pool_output), 460);
     assert_eq!(token_amount(&svm, &wallet_output), 40);
-    assert_eq!(svm.get_balance(&wallet).unwrap(), wallet_before_wrap - 250_000);
+    assert_eq!(
+        svm.get_balance(&wallet).unwrap(),
+        wallet_before_wrap - 250_000
+    );
 
     let wallet_before_unwrap = svm.get_balance(&wallet).unwrap();
     let wsol_lamports_before_unwrap = svm.get_account(&wallet_wsol_ata).unwrap().lamports;
@@ -4475,7 +4494,10 @@ fn wsol_wrap_rejects_malformed_wallet_atas() {
     let wallet_wsol_ata = ata_address(&wallet, &NATIVE_MINT, &TOKEN_PROGRAM);
     let native_reserve = token_account_rent();
 
-    for data in malformed_wsol_account_data_cases(wallet, native_reserve) {
+    for (case_index, data) in malformed_wsol_account_data_cases(wallet, native_reserve)
+        .into_iter()
+        .enumerate()
+    {
         svm.set_account(
             wallet_wsol_ata,
             Account {
@@ -4486,11 +4508,16 @@ fn wsol_wrap_rejects_malformed_wallet_atas() {
             },
         )
         .unwrap();
-        let error = send_unsigned_tx(
+        let result = send_unsigned_tx(
             &mut svm,
             wrap_sol_ix(agent_asset, vault_config, wallet, wallet_wsol_ata, 1),
-        )
-        .unwrap_err();
+        );
+        let error = match result {
+            Ok(cu) => {
+                panic!("malformed WSOL wrap case {case_index} unexpectedly succeeded with {cu} CU")
+            }
+            Err(error) => error,
+        };
         assert_eq!(
             error,
             TransactionError::InstructionError(
@@ -4512,7 +4539,10 @@ fn unwrap_sol_rejects_malformed_wsol_ata() {
     let wallet_wsol_ata = ata_address(&wallet, &NATIVE_MINT, &TOKEN_PROGRAM);
     let native_reserve = token_account_rent();
 
-    for data in malformed_wsol_account_data_cases(wallet, native_reserve) {
+    for (case_index, data) in malformed_wsol_account_data_cases(wallet, native_reserve)
+        .into_iter()
+        .enumerate()
+    {
         svm.set_account(
             wallet_wsol_ata,
             Account {
@@ -4523,11 +4553,15 @@ fn unwrap_sol_rejects_malformed_wsol_ata() {
             },
         )
         .unwrap();
-        let error = send_unsigned_tx(
-            &mut svm,
-            unwrap_sol_ix(agent_asset, vault_config, wallet),
-        )
-        .unwrap_err();
+        let result = send_unsigned_tx(&mut svm, unwrap_sol_ix(agent_asset, vault_config, wallet));
+        let error = match result {
+            Ok(cu) => {
+                panic!(
+                    "malformed WSOL unwrap case {case_index} unexpectedly succeeded with {cu} CU"
+                )
+            }
+            Err(error) => error,
+        };
         assert_eq!(
             error,
             TransactionError::InstructionError(

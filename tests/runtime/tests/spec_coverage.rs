@@ -6,8 +6,7 @@ struct CoverageRow {
 }
 
 const RUNTIME_TEST_SOURCE: &str = include_str!("global_config.rs");
-const KANI_HARNESS_SOURCE: &str =
-    include_str!("../../../programs/agent-vault/src/kani_harness.rs");
+const KANI_HARNESS_SOURCE: &str = include_str!("../../../programs/agent-vault/src/kani_harness.rs");
 const VERIFY_DEVNET_RELEASE_SCRIPT: &str =
     include_str!("../../../scripts/verify-devnet-release.sh");
 const VERIFY_FORMAL_SCRIPT: &str = include_str!("../../../scripts/verify-formal.sh");
