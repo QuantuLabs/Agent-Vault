@@ -392,30 +392,18 @@ pub fn parse_token_account(
     })
 }
 
-pub fn probe_initialized_token_account_custody(
+pub fn probe_token_account_custody(
     data: &[u8],
     token_program_kind: TokenProgramKind,
 ) -> Result<Option<TokenAccountCustodyProbe>, ProgramError> {
-    if !looks_like_initialized_token_account(data, token_program_kind) {
+    if !looks_like_token_account(data, token_program_kind) {
         return Ok(None);
     }
 
-    let mint = match read_pubkey(data, ACCOUNT_MINT_OFFSET) {
-        Ok(value) => value,
-        Err(_) => return Ok(None),
-    };
-    let authority = match read_pubkey(data, ACCOUNT_AUTHORITY_OFFSET) {
-        Ok(value) => value,
-        Err(_) => return Ok(None),
-    };
-    let delegate = match read_coption_pubkey(data, ACCOUNT_DELEGATE_OFFSET) {
-        Ok(value) => value,
-        Err(_) => return Ok(None),
-    };
-    let close_authority = match read_coption_pubkey(data, ACCOUNT_CLOSE_AUTHORITY_OFFSET) {
-        Ok(value) => value,
-        Err(_) => return Ok(None),
-    };
+    let mint = read_pubkey(data, ACCOUNT_MINT_OFFSET)?;
+    let authority = read_pubkey(data, ACCOUNT_AUTHORITY_OFFSET)?;
+    let delegate = read_coption_pubkey(data, ACCOUNT_DELEGATE_OFFSET)?;
+    let close_authority = read_coption_pubkey(data, ACCOUNT_CLOSE_AUTHORITY_OFFSET)?;
 
     Ok(Some(TokenAccountCustodyProbe {
         mint,
@@ -423,6 +411,35 @@ pub fn probe_initialized_token_account_custody(
         delegate,
         close_authority,
     }))
+}
+
+pub fn token_multisig_contains_wallet(
+    data: &[u8],
+    wallet_key: &[u8; PUBKEY_LEN],
+) -> Result<bool, ProgramError> {
+    if data.len() != MULTISIG_LEN {
+        return Ok(false);
+    }
+
+    let m = data[0] as usize;
+    let n = data[1] as usize;
+    let is_initialized = data[2];
+    if is_initialized == TOKEN_STATE_UNINITIALIZED {
+        return Ok(false);
+    }
+    if is_initialized != TOKEN_STATE_INITIALIZED || m == 0 || n == 0 || m > n || n > 11 {
+        return Err(AgentVaultError::InvalidTokenAccount.into());
+    }
+
+    let mut i = 0usize;
+    while i < n {
+        let offset = 3 + (i * PUBKEY_LEN);
+        if slice(data, offset, PUBKEY_LEN)? == wallet_key {
+            return Ok(true);
+        }
+        i += 1;
+    }
+    Ok(false)
 }
 
 #[inline(always)]
@@ -447,7 +464,7 @@ pub fn parse_token_account_for_mint<'a>(
     )
 }
 
-fn looks_like_initialized_token_account(data: &[u8], token_program_kind: TokenProgramKind) -> bool {
+fn looks_like_token_account(data: &[u8], token_program_kind: TokenProgramKind) -> bool {
     match token_program_kind {
         TokenProgramKind::Tokenkeg => {
             if data.len() != TOKEN_ACCOUNT_LEN {
@@ -469,10 +486,7 @@ fn looks_like_initialized_token_account(data: &[u8], token_program_kind: TokenPr
         }
     }
 
-    matches!(
-        data.get(ACCOUNT_STATE_OFFSET),
-        Some(&TOKEN_STATE_INITIALIZED)
-    )
+    true
 }
 
 fn validate_mint_len(

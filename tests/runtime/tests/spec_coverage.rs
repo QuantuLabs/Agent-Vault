@@ -93,6 +93,7 @@ const COVERAGE: &[CoverageRow] = &[
             "init_create_deposit_and_withdraw_sol_flow",
             "sol_paths_preserve_rent_floor_and_reject_duplicate_moves",
             "recovery_only_wallet_allows_constrained_cleanup_paths",
+            "recovery_reopens_wallet_with_preexisting_stranded_token_and_wsol_accounts",
             "recovery_only_wallet_rejects_hot_path_operations",
         ],
         formal_harnesses: &["lamport_move_result_preserves_sum_and_rent_floor"],
@@ -154,6 +155,8 @@ const COVERAGE: &[CoverageRow] = &[
         requirement: "Writable wallet-controlled token accounts require economic and custody checks.",
         runtime_tests: &[
             "execute_cpi_checked_requires_custody_checks_for_writable_wallet_tokens",
+            "execute_cpi_checked_rejects_frozen_or_malformed_wallet_tokens",
+            "execute_cpi_checked_rejects_wallet_control_through_token_multisig",
             "execute_cpi_checked_validates_token_custody_equals_and_ata_status",
             "execute_cpi_checked_rejects_actual_token_custody_mutation",
             "execute_cpi_checked_token_custody_equals_supports_new_wallet_control",
@@ -162,6 +165,7 @@ const COVERAGE: &[CoverageRow] = &[
             "cpi_plan_rejects_protected_or_wallet_remaining_accounts",
             "cpi_duplicate_policy_allows_identical_unprotected_duplicates",
             "sol_balance_post_check_parser_is_total_for_valid_payloads",
+            "post_check_tags_have_spec_serialized_sizes",
         ],
     },
     CoverageRow {
@@ -200,6 +204,8 @@ const COVERAGE: &[CoverageRow] = &[
             "routine_v0_instructions_do_not_charge_protocol_fees",
             "execute_cpi_checked_invokes_memo_with_only_wallet_meta",
             "devnet_release_cost_report",
+            "agent_vault_overhead_cu_execute_cpi_checked_mock_swap",
+            "target_program_cu_execute_cpi_checked_mock_swap",
         ],
         formal_harnesses: &["v0_constants_match_spec_limits_and_tags"],
     },
@@ -286,6 +292,12 @@ fn runtime_item_exists(name: &str) -> bool {
             && LOCALNET_E2E_SCRIPT.contains("permissionless deposit")
             && LOCALNET_E2E_SCRIPT.contains("reopened for recovery")
             && LOCALNET_E2E_SCRIPT.contains("SPL transfer");
+    }
+    if name.starts_with("agent_vault_overhead_cu_")
+        || name.starts_with("target_program_cu_")
+        || name.starts_with("full_transaction_cu_")
+    {
+        return RUNTIME_TEST_SOURCE.contains(name);
     }
 
     RUNTIME_TEST_SOURCE.contains(&format!("fn {name}("))

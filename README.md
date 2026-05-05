@@ -61,7 +61,8 @@ against the expected registry and collection.
 `execute_cpi_checked` is powerful because the wallet PDA signs a target CPI. The
 instruction therefore requires explicit post-checks, rejects direct Token/ATA and
 loader targets, keeps the wallet account readonly, and enforces custody checks for
-writable wallet-controlled token accounts.
+writable wallet-controlled token accounts. SPL Token multisig authorities that
+are satisfiable by the wallet PDA are intentionally rejected in V0.
 
 The intended SDK/mainnet client behavior is fail-closed unless the canonical
 deployment, global config, ProgramData hash, and upgrade authority policy all

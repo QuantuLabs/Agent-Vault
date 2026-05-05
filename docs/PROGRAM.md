@@ -110,12 +110,14 @@ non-executable targets
 writable wallet account
 protected account duplication
 unchecked writable wallet-controlled token custody
+wallet-controlled SPL Token multisig custody
 unchecked writable non-token state
 ```
 
 At least one economic post-check is required. Writable wallet-controlled token
 accounts require both an economic check and a custody-integrity check. Writable
-non-token accounts require `AccountStateEquals`.
+non-token accounts require `AccountStateEquals`. Frozen, malformed, or SPL
+multisig-controlled wallet token custody is rejected in V0.
 
 ## Recovery
 

@@ -13,11 +13,11 @@ Release status:    deployed candidate
 ```
 
 The release manifest is tracked in
-[`docs/RELEASE_MANIFEST.devnet.json`](./RELEASE_MANIFEST.devnet.json). SDK and
-release tooling should verify the program account, ProgramData account, deployed
-ELF hash and size, ProgramData address, ProgramData upgrade authority, global
-config PDA, global config bump, and expected global config fields against that
-manifest before treating the deployment as canonical.
+[`docs/RELEASE_MANIFEST.devnet.json`](./RELEASE_MANIFEST.devnet.json). Canonical
+deployment verification is RPC-backed in the SDK devnet preflight: it checks the
+program account, ProgramData account, deployed ELF hash and size, ProgramData
+address, ProgramData upgrade authority, global config PDA, global config bump,
+and expected global config fields against that manifest before signed SDK writes.
 
 ## Verify Locally
 
@@ -30,15 +30,16 @@ NO_DNA=1 cargo test --offline --manifest-path tests/runtime/Cargo.toml devnet_re
 NO_DNA=1 ./scripts/verify-formal.sh
 ```
 
-Full release verification:
+Full local release verification:
 
 ```bash
 NO_DNA=1 ./scripts/verify-devnet-release.sh
 ```
 
 That script runs formatting, Clippy, unit tests, SBF build checks, LiteSVM
-runtime tests, localnet e2e, Kani harnesses, and release artifact hash/size
-checks.
+runtime tests, localnet e2e, Kani harnesses, and local release artifact hash/size
+checks. It does not perform live RPC reads; use the SDK preflight below for
+onchain devnet deployment verification.
 
 ## SDK Preflight
 
@@ -57,7 +58,9 @@ the signer is funded and you intentionally want to run the live write flow.
 ## Devnet Flow Coverage
 
 The SDK devnet e2e covers the full V0 instruction surface when send mode is
-enabled:
+enabled. `initialize_global_config` is sent only when
+`AGENT_VAULT_INIT_GLOBAL=1` creates a missing global config; otherwise the e2e
+counts it as deployment-verified by the live global-config preflight:
 
 ```text
 initialize_global_config

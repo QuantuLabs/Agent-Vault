@@ -62,6 +62,7 @@ const LOADER_V4: Address = address!("LoaderV411111111111111111111111111111111111
 const NATIVE_MINT: Address = address!("So11111111111111111111111111111111111111112");
 const TOKEN_MINT_LEN: usize = 82;
 const TOKEN_ACCOUNT_LEN: usize = 165;
+const TOKEN_MULTISIG_LEN: usize = 355;
 const SHA256_EMPTY: [u8; 32] = [
     0xe3, 0xb0, 0xc4, 0x42, 0x98, 0xfc, 0x1c, 0x14, 0x9a, 0xfb, 0xf4, 0xc8, 0x99, 0x6f, 0xb9,
     0x24, 0x27, 0xae, 0x41, 0xe4, 0x64, 0x9b, 0x93, 0x4c, 0xa4, 0x95, 0x99, 0x1b, 0x78, 0x52,
@@ -326,6 +327,18 @@ fn token_account_data(mint: Address, authority: Address, amount: u64) -> Vec<u8>
     data[32..64].copy_from_slice(authority.as_ref());
     data[64..72].copy_from_slice(&amount.to_le_bytes());
     data[108] = 1;
+    data
+}
+
+fn token_multisig_data(signers: &[Address]) -> Vec<u8> {
+    let mut data = vec![0u8; TOKEN_MULTISIG_LEN];
+    data[0] = 1;
+    data[1] = signers.len() as u8;
+    data[2] = 1;
+    for (i, signer) in signers.iter().enumerate() {
+        let offset = 3 + (i * 32);
+        data[offset..offset + 32].copy_from_slice(signer.as_ref());
+    }
     data
 }
 
@@ -1065,6 +1078,43 @@ fn execute_cpi_checked_writable_token_missing_custody_ix(
             AccountMeta::new_readonly(agent_asset, false),
             AccountMeta::new_readonly(MEMO_PROGRAM, false),
             AccountMeta::new(token_account, false),
+        ],
+        data,
+    }
+}
+
+fn execute_cpi_checked_writable_token_multisig_ix(
+    agent_asset: Address,
+    vault_config: Address,
+    wallet: Address,
+    token_account: Address,
+    multisig: Address,
+    min_wallet_lamports: u64,
+) -> Instruction {
+    let memo = b"token-multisig";
+    let mut data = Vec::with_capacity(1 + 6 + memo.len() + 1 + 10);
+    data.push(TAG_EXECUTE_CPI_CHECKED);
+    data.extend_from_slice(&0u16.to_le_bytes());
+    data.push(0);
+    data.push(2);
+    data.extend_from_slice(&(memo.len() as u16).to_le_bytes());
+    data.extend_from_slice(memo);
+    data.push(1);
+    data.push(0);
+    data.push(0);
+    data.extend_from_slice(&min_wallet_lamports.to_le_bytes());
+
+    Instruction {
+        program_id: PROGRAM_ID,
+        accounts: vec![
+            AccountMeta::new_readonly(INITIALIZER, true),
+            AccountMeta::new_readonly(global_config_pda(), false),
+            AccountMeta::new_readonly(vault_config, false),
+            AccountMeta::new_readonly(wallet, false),
+            AccountMeta::new_readonly(agent_asset, false),
+            AccountMeta::new_readonly(MEMO_PROGRAM, false),
+            AccountMeta::new(token_account, false),
+            AccountMeta::new_readonly(multisig, false),
         ],
         data,
     }
@@ -2706,6 +2756,8 @@ fn devnet_release_cost_report() {
         ),
     )
     .unwrap();
+    let execute_cpi_mock_swap_target_cu =
+        execute_cpi_mock_swap_cu.saturating_sub(execute_cpi_noop_cu);
     send_unsigned_tx(
         &mut svm,
         close_wallet_ata_ix(
@@ -2779,6 +2831,11 @@ fn devnet_release_cost_report() {
     println!("cu_execute_cpi_checked_memo={execute_cpi_memo_cu}");
     println!("cu_execute_cpi_checked_noop_baseline={execute_cpi_noop_cu}");
     println!("cu_execute_cpi_checked_mock_swap={execute_cpi_mock_swap_cu}");
+    println!("full_transaction_cu_execute_cpi_checked_mock_swap={execute_cpi_mock_swap_cu}");
+    println!(
+        "agent_vault_overhead_cu_execute_cpi_checked_mock_swap={execute_cpi_noop_cu}"
+    );
+    println!("target_program_cu_execute_cpi_checked_mock_swap={execute_cpi_mock_swap_target_cu}");
     println!("cu_close_wallet={close_wallet_cu}");
     println!("cu_reopen_wallet_for_recovery={reopen_cu}");
 
@@ -3258,6 +3315,127 @@ fn execute_cpi_checked_requires_custody_checks_for_writable_wallet_tokens() {
         TransactionError::InstructionError(
             0,
             InstructionError::Custom(AgentVaultError::MissingCustodyPostCheck as u32),
+        )
+    );
+}
+
+#[test]
+fn execute_cpi_checked_rejects_frozen_or_malformed_wallet_tokens() {
+    let mut svm = runtime();
+    initialize_global_config(&mut svm);
+    svm.airdrop(&FEE_TREASURY, 1).unwrap();
+
+    let agent_asset = Address::new_unique();
+    let (vault_config, wallet) = create_agent_vault_and_wallet(&mut svm, agent_asset);
+    let min_wallet_lamports = svm.get_balance(&wallet).unwrap();
+    let mint = Address::new_unique();
+    install_mint(&mut svm, mint, TOKEN_PROGRAM, 6);
+    let wallet_ata = ata_address(&wallet, &mint, &TOKEN_PROGRAM);
+
+    let mut frozen = token_account_data(mint, wallet, 1);
+    frozen[108] = 2;
+    install_token_account(&mut svm, wallet_ata, TOKEN_PROGRAM, frozen);
+    let frozen_account = svm.get_account(&wallet_ata).unwrap();
+    let frozen_error = send_unsigned_tx(
+        &mut svm,
+        execute_cpi_checked_writable_account_state_snapshot_ix(
+            agent_asset,
+            vault_config,
+            wallet,
+            wallet_ata,
+            TOKEN_PROGRAM,
+            true,
+            min_wallet_lamports,
+            frozen_account.lamports,
+            frozen_account.data.len() as u32,
+            sha256_bytes(&frozen_account.data),
+        ),
+    )
+    .unwrap_err();
+    assert_eq!(
+        frozen_error,
+        TransactionError::InstructionError(
+            0,
+            InstructionError::Custom(AgentVaultError::InvalidTokenAccount as u32),
+        )
+    );
+
+    let mut malformed = token_account_data(mint, wallet, 1);
+    malformed[72..76].copy_from_slice(&[2, 0, 0, 0]);
+    install_token_account(&mut svm, wallet_ata, TOKEN_PROGRAM, malformed);
+    let malformed_account = svm.get_account(&wallet_ata).unwrap();
+    let malformed_error = send_unsigned_tx(
+        &mut svm,
+        execute_cpi_checked_writable_account_state_snapshot_ix(
+            agent_asset,
+            vault_config,
+            wallet,
+            wallet_ata,
+            TOKEN_PROGRAM,
+            true,
+            min_wallet_lamports,
+            malformed_account.lamports,
+            malformed_account.data.len() as u32,
+            sha256_bytes(&malformed_account.data),
+        ),
+    )
+    .unwrap_err();
+    assert_eq!(
+        malformed_error,
+        TransactionError::InstructionError(
+            0,
+            InstructionError::Custom(AgentVaultError::InvalidTokenAccount as u32),
+        )
+    );
+}
+
+#[test]
+fn execute_cpi_checked_rejects_wallet_control_through_token_multisig() {
+    let mut svm = runtime();
+    initialize_global_config(&mut svm);
+    svm.airdrop(&FEE_TREASURY, 1).unwrap();
+
+    let agent_asset = Address::new_unique();
+    let (vault_config, wallet) = create_agent_vault_and_wallet(&mut svm, agent_asset);
+    let min_wallet_lamports = svm.get_balance(&wallet).unwrap();
+    let mint = Address::new_unique();
+    install_mint(&mut svm, mint, TOKEN_PROGRAM, 6);
+    let multisig = Address::new_unique();
+    svm.set_account(
+        multisig,
+        Account {
+            lamports: 1_000_000,
+            data: token_multisig_data(&[wallet]),
+            owner: TOKEN_PROGRAM,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let token_account = Address::new_unique();
+    install_token_account(
+        &mut svm,
+        token_account,
+        TOKEN_PROGRAM,
+        token_account_data(mint, multisig, 1),
+    );
+
+    let error = send_unsigned_tx(
+        &mut svm,
+        execute_cpi_checked_writable_token_multisig_ix(
+            agent_asset,
+            vault_config,
+            wallet,
+            token_account,
+            multisig,
+            min_wallet_lamports,
+        ),
+    )
+    .unwrap_err();
+    assert_eq!(
+        error,
+        TransactionError::InstructionError(
+            0,
+            InstructionError::Custom(AgentVaultError::InvalidTokenAccount as u32),
         )
     );
 }
@@ -4695,6 +4873,91 @@ fn recovery_only_wallet_allows_constrained_cleanup_paths() {
             InstructionError::Custom(AgentVaultError::WalletRecoveryOnly as u32),
         )
     );
+}
+
+#[test]
+fn recovery_reopens_wallet_with_preexisting_stranded_token_and_wsol_accounts() {
+    let mut svm = runtime();
+    initialize_global_config(&mut svm);
+    svm.airdrop(&FEE_TREASURY, 1).unwrap();
+
+    let agent_asset = Address::new_unique();
+    let (vault_config, wallet) = create_agent_vault_and_wallet(&mut svm, agent_asset);
+    let native_reserve = token_account_rent();
+    let wallet_wsol_ata = ata_address(&wallet, &NATIVE_MINT, &TOKEN_PROGRAM);
+    svm.set_account(
+        wallet_wsol_ata,
+        Account {
+            lamports: native_reserve + 500,
+            data: native_token_account_data(NATIVE_MINT, wallet, 500, native_reserve),
+            owner: TOKEN_PROGRAM,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    let mint = Address::new_unique();
+    install_mint(&mut svm, mint, TOKEN_PROGRAM, 6);
+    let source_ata = ata_address(&wallet, &mint, &TOKEN_PROGRAM);
+    let external_destination = Address::new_unique();
+    install_token_account(
+        &mut svm,
+        source_ata,
+        TOKEN_PROGRAM,
+        token_account_data(mint, wallet, 10),
+    );
+    install_token_account(
+        &mut svm,
+        external_destination,
+        TOKEN_PROGRAM,
+        token_account_data(mint, Address::new_unique(), 0),
+    );
+
+    let rent_receiver = Address::new_unique();
+    svm.airdrop(&rent_receiver, 1).unwrap();
+    send_unsigned_tx(
+        &mut svm,
+        close_wallet_ix(agent_asset, vault_config, wallet, rent_receiver),
+    )
+    .unwrap();
+    send_unsigned_tx(
+        &mut svm,
+        reopen_wallet_for_recovery_ix(agent_asset, vault_config, wallet),
+    )
+    .unwrap();
+
+    send_unsigned_tx(&mut svm, unwrap_sol_ix(agent_asset, vault_config, wallet)).unwrap();
+    assert!(svm.get_account(&wallet_wsol_ata).is_none());
+    send_unsigned_tx(
+        &mut svm,
+        transfer_spl_ix(
+            agent_asset,
+            vault_config,
+            wallet,
+            mint,
+            source_ata,
+            external_destination,
+            TOKEN_PROGRAM,
+            10,
+            6,
+            0,
+        ),
+    )
+    .unwrap();
+    assert_eq!(token_amount(&svm, &external_destination), 10);
+    send_unsigned_tx(
+        &mut svm,
+        close_wallet_ata_ix(
+            agent_asset,
+            vault_config,
+            wallet,
+            mint,
+            TOKEN_PROGRAM,
+            rent_receiver,
+        ),
+    )
+    .unwrap();
+    assert!(svm.get_account(&source_ata).is_none());
 }
 
 #[test]

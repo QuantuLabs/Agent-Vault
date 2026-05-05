@@ -140,7 +140,7 @@ fn v0_constants_match_spec_limits_and_tags() {
 fn reserved_instruction_discriminators_reject_in_v0() {
     let tag: u8 = kani::any();
     kani::assume(tag >= 65);
-    kani::assume(tag <= 95);
+    kani::assume(tag <= 127);
     let data = [tag];
 
     assert!(parse_instruction(&data).is_err());
@@ -244,6 +244,46 @@ fn sol_balance_post_check_parser_is_total_for_valid_payloads() {
             10,
         ))
     );
+}
+
+#[kani::proof]
+fn post_check_tags_have_spec_serialized_sizes() {
+    let mut sol = [0u8; 10];
+    let mut tag = 0u8;
+    while tag <= 3 {
+        sol[0] = tag;
+        assert_eq!(parse_post_check(&sol).unwrap().1, 10);
+        tag += 1;
+    }
+
+    let mut token_amount = [0u8; 43];
+    tag = 4;
+    while tag <= 7 {
+        token_amount[0] = tag;
+        assert_eq!(parse_post_check(&token_amount).unwrap().1, 43);
+        tag += 1;
+    }
+
+    let mut token_authority = [0u8; 34];
+    token_authority[0] = 8;
+    assert_eq!(parse_post_check(&token_authority).unwrap().1, 34);
+
+    let mut token_custody_unchanged = [0u8; 3];
+    token_custody_unchanged[0] = 9;
+    assert_eq!(parse_post_check(&token_custody_unchanged).unwrap().1, 3);
+
+    let mut token_custody_equals = [0u8; 167];
+    token_custody_equals[0] = 10;
+    token_custody_equals[3] = TokenProgramKind::Tokenkeg.as_u8();
+    assert_eq!(parse_post_check(&token_custody_equals).unwrap().1, 167);
+
+    let mut account_owner = [0u8; 34];
+    account_owner[0] = 11;
+    assert_eq!(parse_post_check(&account_owner).unwrap().1, 34);
+
+    let mut account_state = [0u8; 78];
+    account_state[0] = 12;
+    assert_eq!(parse_post_check(&account_state).unwrap().1, 78);
 }
 
 #[kani::proof]

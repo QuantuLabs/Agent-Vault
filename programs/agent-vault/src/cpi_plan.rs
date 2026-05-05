@@ -464,7 +464,7 @@ mod tests {
             [CpiAccountMeta::new([0u8; PUBKEY_LEN], false, false); MAX_CPI_ACCOUNTS as usize];
         let mut i = 0usize;
         while i < accounts.len() {
-            accounts[i] = meta(10 + i as u8, false, i % 2 == 0);
+            accounts[i] = meta(10 + i as u8, false, i.is_multiple_of(2));
             i += 1;
         }
 

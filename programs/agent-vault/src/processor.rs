@@ -32,8 +32,8 @@ use crate::{
         VAULT_CONFIG_WALLET_COUNT_OFFSET, WALLET_LABEL_OFFSET, WALLET_LEN,
     },
     token_state::{
-        parse_mint, parse_token_account_for_mint, probe_initialized_token_account_custody,
-        TokenAccount, TokenAccountCustodyProbe, TOKEN_ACCOUNT_LEN,
+        parse_mint, parse_token_account_for_mint, probe_token_account_custody,
+        token_multisig_contains_wallet, TokenAccount, TokenAccountCustodyProbe, TOKEN_ACCOUNT_LEN,
     },
     validation::{
         assert_associated_token_program, assert_clock_sysvar, assert_native_mint, assert_owned_by,
@@ -1253,7 +1253,7 @@ fn enforce_wallet_controlled_token_checks(
     let mut i = 0usize;
     while i < final_accounts.len() {
         if final_metas[i].is_writable {
-            match classify_writable_token_account(final_accounts[i], wallet_key)? {
+            match classify_writable_token_account(final_accounts[i], final_accounts, wallet_key)? {
                 WritableTokenAccount::WalletControlled { mint, kind } => {
                     let token_index = i as u8;
                     if !*coverage_loaded {
@@ -1271,6 +1271,9 @@ fn enforce_wallet_controlled_token_checks(
                     if final_accounts[i].address() != &expected_ata.address {
                         return Err(AgentVaultError::InvalidAta.into());
                     }
+                }
+                WritableTokenAccount::WalletControlledThroughMultisig => {
+                    return Err(AgentVaultError::InvalidTokenAccount.into());
                 }
                 WritableTokenAccount::TokenOwnedNonAccount => {
                     let token_index = i as u8;
@@ -1301,6 +1304,7 @@ enum WritableTokenAccount {
         mint: [u8; PUBKEY_LEN],
         kind: TokenProgramKind,
     },
+    WalletControlledThroughMultisig,
     NonWalletTokenAccount,
     TokenOwnedNonAccount,
     NotTokenOwned,
@@ -1393,6 +1397,7 @@ fn enforce_writable_non_token_owner_checks(
 
 fn classify_writable_token_account(
     account: &AccountView,
+    final_accounts: &[&AccountView],
     wallet_key: &[u8; PUBKEY_LEN],
 ) -> Result<WritableTokenAccount, ProgramError> {
     let kind = if account.owned_by(&TOKEN_PROGRAM_ID) {
@@ -1402,19 +1407,48 @@ fn classify_writable_token_account(
     } else {
         return Ok(WritableTokenAccount::NotTokenOwned);
     };
-    let data = account.try_borrow()?;
-    let Some(probe) = probe_initialized_token_account_custody(&data, kind)? else {
-        return Ok(WritableTokenAccount::TokenOwnedNonAccount);
+    let probe = {
+        let data = account.try_borrow()?;
+        let Some(probe) = probe_token_account_custody(&data, kind)? else {
+            return Ok(WritableTokenAccount::TokenOwnedNonAccount);
+        };
+        probe
     };
+    if token_probe_has_wallet_multisig_custody(&probe, final_accounts, wallet_key)? {
+        return Ok(WritableTokenAccount::WalletControlledThroughMultisig);
+    }
     if !token_probe_has_wallet_custody(&probe, wallet_key) {
         return Ok(WritableTokenAccount::NonWalletTokenAccount);
     }
 
+    let data = account.try_borrow()?;
     let token = crate::token_state::parse_token_account(&data, kind, true)?;
     Ok(WritableTokenAccount::WalletControlled {
         mint: token.mint,
         kind,
     })
+}
+
+fn token_probe_has_wallet_multisig_custody(
+    probe: &TokenAccountCustodyProbe,
+    final_accounts: &[&AccountView],
+    wallet_key: &[u8; PUBKEY_LEN],
+) -> Result<bool, ProgramError> {
+    let mut i = 0usize;
+    while i < final_accounts.len() {
+        let account = final_accounts[i];
+        if account.owned_by(&TOKEN_PROGRAM_ID) || account.owned_by(&TOKEN_2022_PROGRAM_ID) {
+            let key = address_bytes(account.address());
+            if token_probe_has_pubkey_custody(probe, &key) {
+                let data = account.try_borrow()?;
+                if token_multisig_contains_wallet(&data, wallet_key)? {
+                    return Ok(true);
+                }
+            }
+        }
+        i += 1;
+    }
+    Ok(false)
 }
 
 fn post_checks_cover_account_state(
@@ -1745,6 +1779,15 @@ fn token_probe_has_wallet_custody(
     account.authority == *wallet_key
         || optional_pubkey_equals(&account.close_authority, wallet_key)
         || optional_pubkey_equals(&account.delegate, wallet_key)
+}
+
+fn token_probe_has_pubkey_custody(
+    account: &TokenAccountCustodyProbe,
+    key: &[u8; PUBKEY_LEN],
+) -> bool {
+    account.authority == *key
+        || optional_pubkey_equals(&account.close_authority, key)
+        || optional_pubkey_equals(&account.delegate, key)
 }
 
 const TOKEN_ACCOUNT_MINT_OFFSET: usize = 0;
