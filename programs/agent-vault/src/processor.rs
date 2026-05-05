@@ -1414,10 +1414,10 @@ fn classify_writable_token_account(
         };
         probe
     };
-    if token_probe_has_wallet_multisig_custody(&probe, final_accounts, wallet_key)? {
-        return Ok(WritableTokenAccount::WalletControlledThroughMultisig);
-    }
     if !token_probe_has_wallet_custody(&probe, wallet_key) {
+        if token_probe_has_wallet_multisig_custody(&probe, final_accounts, wallet_key)? {
+            return Ok(WritableTokenAccount::WalletControlledThroughMultisig);
+        }
         return Ok(WritableTokenAccount::NonWalletTokenAccount);
     }
 
