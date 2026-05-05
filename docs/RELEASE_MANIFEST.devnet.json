@@ -4,7 +4,7 @@
   "release": "devnet-v0.1.0-candidate",
   "cluster": "devnet",
   "deploymentStatus": "deployed",
-  "sourceCommit": "383c17a04a2137e575c0dbe10ada63a62331657d",
+  "sourceCommit": "a71a38b4d685bea2d675395abc70efb6343a69af",
   "build": {
     "command": "NO_DNA=1 cargo build-sbf",
     "solanaCargoBuildSbf": "2.3.10",
@@ -18,8 +18,8 @@
     "id": "36u7KMBuxjExvU6V2nfTX5SnNdYMGUupFiYouLzrgpfW",
     "globalConfigPda": "Fv7ffwFuAZBiCZ6dpBPKEgYEGMXpSArmqvaqfH35Gbod",
     "globalConfigBump": 255,
-    "sbfElfSha256": "fc3f3663d1105b5b2cc2b36809af47da1fa5ca8e0f6b5d12f15fccc336dd65b7",
-    "sbfElfSizeBytes": 150160
+    "sbfElfSha256": "862dd923c70d7a8532a42c3b65911f0def70855dd791aeaf1c203fec565e44a6",
+    "sbfElfSizeBytes": 150416
   },
   "expectedGlobalConfig": {
     "initializer": "2KmHw8VbShuz9xfj3ecEjBM5nPKR5BcYHRDSFfK1286t",
@@ -35,8 +35,8 @@
   },
   "deploymentVerification": {
     "programDataAddress": "CQ71N7pQrmH6pGwZtcC9ibXGSA3otJEVvpmpdmtQ5Gsw",
-    "programDataSha256": "eaad52b6b79755381a9943804e7b4a5c65a4c3100cf9ffa5042743b3a74868a4",
-    "programDataSizeBytes": 150264,
+    "programDataSha256": "862dd923c70d7a8532a42c3b65911f0def70855dd791aeaf1c203fec565e44a6",
+    "programDataSizeBytes": 150416,
     "upgradeAuthority": "2KmHw8VbShuz9xfj3ecEjBM5nPKR5BcYHRDSFfK1286t",
     "upgradePolicy": "devnet-upgradeable"
   },
