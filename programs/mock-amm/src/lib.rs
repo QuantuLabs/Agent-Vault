@@ -119,13 +119,15 @@ fn swap_with_pool_authority(
     let seeds = [Seed::from(POOL_AUTHORITY_SEED), Seed::from(&bump_seed)];
     let signer = Signer::from(&seeds);
     transfer_checked_with_signers(
-        token_program,
-        pool_output,
-        output_mint,
-        user_output,
-        pool_authority,
-        amount_out,
-        output_decimals,
+        TransferCheckedCpi {
+            token_program,
+            source: pool_output,
+            mint: output_mint,
+            destination: user_output,
+            authority: pool_authority,
+            amount: amount_out,
+            decimals: output_decimals,
+        },
         &[signer],
     )
 }
@@ -231,45 +233,56 @@ fn transfer_checked(
     decimals: u8,
 ) -> ProgramResult {
     transfer_checked_with_signers(
-        token_program,
-        source,
-        mint,
-        destination,
-        authority,
-        amount,
-        decimals,
+        TransferCheckedCpi {
+            token_program,
+            source,
+            mint,
+            destination,
+            authority,
+            amount,
+            decimals,
+        },
         &[],
     )
 }
 
-fn transfer_checked_with_signers(
-    token_program: &AccountView,
-    source: &AccountView,
-    mint: &AccountView,
-    destination: &AccountView,
-    authority: &AccountView,
+struct TransferCheckedCpi<'a> {
+    token_program: &'a AccountView,
+    source: &'a AccountView,
+    mint: &'a AccountView,
+    destination: &'a AccountView,
+    authority: &'a AccountView,
     amount: u64,
     decimals: u8,
+}
+
+fn transfer_checked_with_signers(
+    params: TransferCheckedCpi<'_>,
     signers: &[Signer],
 ) -> ProgramResult {
     let metas = [
-        InstructionAccount::writable(source.address()),
-        InstructionAccount::readonly(mint.address()),
-        InstructionAccount::writable(destination.address()),
-        InstructionAccount::readonly_signer(authority.address()),
+        InstructionAccount::writable(params.source.address()),
+        InstructionAccount::readonly(params.mint.address()),
+        InstructionAccount::writable(params.destination.address()),
+        InstructionAccount::readonly_signer(params.authority.address()),
     ];
     let mut data = [0u8; 10];
     data[0] = 12;
-    data[1..9].copy_from_slice(&amount.to_le_bytes());
-    data[9] = decimals;
+    data[1..9].copy_from_slice(&params.amount.to_le_bytes());
+    data[9] = params.decimals;
     let instruction = InstructionView {
-        program_id: token_program.address(),
+        program_id: params.token_program.address(),
         accounts: &metas,
         data: &data,
     };
     invoke_signed(
         &instruction,
-        &[source, mint, destination, authority],
+        &[
+            params.source,
+            params.mint,
+            params.destination,
+            params.authority,
+        ],
         signers,
     )
 }
