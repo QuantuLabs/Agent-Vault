@@ -133,6 +133,10 @@ fn ata_address(wallet: &Address, mint: &Address, token_program: &Address) -> Add
     .0
 }
 
+fn mock_pool_authority() -> Address {
+    Address::find_program_address(&[b"pool_authority"], &MOCK_AMM_PROGRAM).0
+}
+
 fn registry_agent_pda(agent_asset: &Address) -> (Address, u8) {
     Address::find_program_address(&[b"agent", agent_asset.as_ref()], &REGISTRY_PROGRAM)
 }
@@ -1596,6 +1600,82 @@ fn execute_cpi_checked_mock_swap_ix_with_decimals(
             AccountMeta::new(pool_input, false),
             AccountMeta::new(pool_output, false),
             AccountMeta::new(user_output, false),
+            AccountMeta::new_readonly(input_mint, false),
+            AccountMeta::new_readonly(output_mint, false),
+            AccountMeta::new_readonly(TOKEN_PROGRAM, false),
+        ],
+        data,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn execute_cpi_checked_mock_swap_with_pool_authority_ix(
+    agent_asset: Address,
+    vault_config: Address,
+    wallet: Address,
+    input_mint: Address,
+    output_mint: Address,
+    user_input: Address,
+    pool_input: Address,
+    pool_output: Address,
+    user_output: Address,
+    pool_authority: Address,
+    amount_in: u64,
+    max_input: u64,
+    amount_out: u64,
+    min_output: u64,
+    input_decimals: u8,
+    output_decimals: u8,
+) -> Instruction {
+    let mut target_data = [0u8; 18];
+    target_data[0..8].copy_from_slice(&amount_in.to_le_bytes());
+    target_data[8..16].copy_from_slice(&amount_out.to_le_bytes());
+    target_data[16] = input_decimals;
+    target_data[17] = output_decimals;
+
+    let mut data = Vec::with_capacity(1 + 6 + target_data.len() + 1 + (43 * 2) + (3 * 2));
+    data.push(TAG_EXECUTE_CPI_CHECKED);
+    data.extend_from_slice(&0u16.to_le_bytes());
+    data.push(0);
+    data.push(8);
+    data.extend_from_slice(&(target_data.len() as u16).to_le_bytes());
+    data.extend_from_slice(&target_data);
+    data.push(4);
+
+    data.push(7);
+    data.push(1);
+    data.push(6);
+    data.extend_from_slice(input_mint.as_ref());
+    data.extend_from_slice(&max_input.to_le_bytes());
+
+    data.push(9);
+    data.push(1);
+    data.push(6);
+
+    data.push(6);
+    data.push(4);
+    data.push(7);
+    data.extend_from_slice(output_mint.as_ref());
+    data.extend_from_slice(&min_output.to_le_bytes());
+
+    data.push(9);
+    data.push(4);
+    data.push(7);
+
+    Instruction {
+        program_id: PROGRAM_ID,
+        accounts: vec![
+            AccountMeta::new_readonly(INITIALIZER, true),
+            AccountMeta::new_readonly(global_config_pda(), false),
+            AccountMeta::new_readonly(vault_config, false),
+            AccountMeta::new_readonly(wallet, false),
+            AccountMeta::new_readonly(agent_asset, false),
+            AccountMeta::new_readonly(MOCK_AMM_PROGRAM, false),
+            AccountMeta::new(user_input, false),
+            AccountMeta::new(pool_input, false),
+            AccountMeta::new(pool_output, false),
+            AccountMeta::new(user_output, false),
+            AccountMeta::new_readonly(pool_authority, false),
             AccountMeta::new_readonly(input_mint, false),
             AccountMeta::new_readonly(output_mint, false),
             AccountMeta::new_readonly(TOKEN_PROGRAM, false),
@@ -4210,24 +4290,25 @@ fn wsol_wrap_swap_and_unwrap_composes_with_checked_cpi() {
     .unwrap();
     let output_mint = Address::new_unique();
     install_mint(&mut svm, output_mint, TOKEN_PROGRAM, 6);
-    let pool_output = ata_address(&wallet, &output_mint, &TOKEN_PROGRAM);
-    let user_output = Address::new_unique();
+    let pool_authority = mock_pool_authority();
+    let pool_output = Address::new_unique();
+    let wallet_output = ata_address(&wallet, &output_mint, &TOKEN_PROGRAM);
     install_token_account(
         &mut svm,
         pool_output,
         TOKEN_PROGRAM,
-        token_account_data(output_mint, wallet, 500),
+        token_account_data(output_mint, pool_authority, 500),
     );
     install_token_account(
         &mut svm,
-        user_output,
+        wallet_output,
         TOKEN_PROGRAM,
-        token_account_data(output_mint, Address::new_unique(), 0),
+        token_account_data(output_mint, wallet, 0),
     );
 
     send_unsigned_tx(
         &mut svm,
-        execute_cpi_checked_mock_swap_ix_with_decimals(
+        execute_cpi_checked_mock_swap_with_pool_authority_ix(
             agent_asset,
             vault_config,
             wallet,
@@ -4236,7 +4317,8 @@ fn wsol_wrap_swap_and_unwrap_composes_with_checked_cpi() {
             wallet_wsol_ata,
             pool_input,
             pool_output,
-            user_output,
+            wallet_output,
+            pool_authority,
             250_000,
             250_000,
             40,
@@ -4247,11 +4329,19 @@ fn wsol_wrap_swap_and_unwrap_composes_with_checked_cpi() {
     )
     .unwrap();
     assert_eq!(token_amount(&svm, &wallet_wsol_ata), 0);
-    assert_eq!(token_amount(&svm, &user_output), 40);
+    assert_eq!(token_amount(&svm, &pool_input), 250_000);
+    assert_eq!(token_amount(&svm, &pool_output), 460);
+    assert_eq!(token_amount(&svm, &wallet_output), 40);
+    assert_eq!(svm.get_balance(&wallet).unwrap(), wallet_before_wrap - 250_000);
 
+    let wallet_before_unwrap = svm.get_balance(&wallet).unwrap();
+    let wsol_lamports_before_unwrap = svm.get_account(&wallet_wsol_ata).unwrap().lamports;
     send_unsigned_tx(&mut svm, unwrap_sol_ix(agent_asset, vault_config, wallet)).unwrap();
     assert!(svm.get_account(&wallet_wsol_ata).is_none());
-    assert!(svm.get_balance(&wallet).unwrap() >= wallet_before_wrap);
+    assert_eq!(
+        svm.get_balance(&wallet).unwrap(),
+        wallet_before_unwrap + wsol_lamports_before_unwrap
+    );
 }
 
 #[test]

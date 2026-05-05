@@ -1,11 +1,13 @@
 #![cfg_attr(not(test), no_std)]
 
 use pinocchio::{
-    cpi::invoke_signed,
+    cpi::{invoke_signed, Seed, Signer},
     error::ProgramError,
     instruction::{InstructionAccount, InstructionView},
     AccountView, Address, ProgramResult,
 };
+
+const POOL_AUTHORITY_SEED: &[u8] = b"pool_authority";
 
 #[cfg(not(feature = "no-entrypoint"))]
 pinocchio::program_entrypoint!(process_instruction);
@@ -15,7 +17,7 @@ pinocchio::default_allocator!();
 pinocchio::nostd_panic_handler!();
 
 pub fn process_instruction(
-    _program_id: &Address,
+    program_id: &Address,
     accounts: &[AccountView],
     data: &[u8],
 ) -> ProgramResult {
@@ -33,6 +35,9 @@ pub fn process_instruction(
     }
     if accounts.len() == 8 && data.len() == 18 {
         return swap(accounts, data);
+    }
+    if accounts.len() == 9 && data.len() == 18 {
+        return swap_with_pool_authority(program_id, accounts, data);
     }
 
     Err(ProgramError::InvalidInstructionData)
@@ -70,6 +75,58 @@ fn swap(accounts: &[AccountView], data: &[u8]) -> ProgramResult {
         wallet,
         amount_out,
         output_decimals,
+    )
+}
+
+fn swap_with_pool_authority(
+    program_id: &Address,
+    accounts: &[AccountView],
+    data: &[u8],
+) -> ProgramResult {
+    let wallet = account(accounts, 0)?;
+    let user_input = account(accounts, 1)?;
+    let pool_input = account(accounts, 2)?;
+    let pool_output = account(accounts, 3)?;
+    let user_output = account(accounts, 4)?;
+    let pool_authority = account(accounts, 5)?;
+    let input_mint = account(accounts, 6)?;
+    let output_mint = account(accounts, 7)?;
+    let token_program = account(accounts, 8)?;
+
+    let amount_in = read_u64_le(data, 0)?;
+    let amount_out = read_u64_le(data, 8)?;
+    let input_decimals = data[16];
+    let output_decimals = data[17];
+
+    let (expected_pool_authority, bump) =
+        Address::try_find_program_address(&[POOL_AUTHORITY_SEED], program_id)
+            .ok_or(ProgramError::InvalidSeeds)?;
+    if pool_authority.address() != &expected_pool_authority {
+        return Err(ProgramError::InvalidSeeds);
+    }
+
+    transfer_checked(
+        token_program,
+        user_input,
+        input_mint,
+        pool_input,
+        wallet,
+        amount_in,
+        input_decimals,
+    )?;
+
+    let bump_seed = [bump];
+    let seeds = [Seed::from(POOL_AUTHORITY_SEED), Seed::from(&bump_seed)];
+    let signer = Signer::from(&seeds);
+    transfer_checked_with_signers(
+        token_program,
+        pool_output,
+        output_mint,
+        user_output,
+        pool_authority,
+        amount_out,
+        output_decimals,
+        &[signer],
     )
 }
 
@@ -162,6 +219,28 @@ fn transfer_checked(
     amount: u64,
     decimals: u8,
 ) -> ProgramResult {
+    transfer_checked_with_signers(
+        token_program,
+        source,
+        mint,
+        destination,
+        authority,
+        amount,
+        decimals,
+        &[],
+    )
+}
+
+fn transfer_checked_with_signers(
+    token_program: &AccountView,
+    source: &AccountView,
+    mint: &AccountView,
+    destination: &AccountView,
+    authority: &AccountView,
+    amount: u64,
+    decimals: u8,
+    signers: &[Signer],
+) -> ProgramResult {
     let metas = [
         InstructionAccount::writable(source.address()),
         InstructionAccount::readonly(mint.address()),
@@ -177,7 +256,11 @@ fn transfer_checked(
         accounts: &metas,
         data: &data,
     };
-    invoke_signed(&instruction, &[source, mint, destination, authority], &[])
+    invoke_signed(
+        &instruction,
+        &[source, mint, destination, authority],
+        signers,
+    )
 }
 
 fn account(accounts: &[AccountView], index: usize) -> Result<&AccountView, ProgramError> {
