@@ -114,6 +114,7 @@ const COVERAGE: &[CoverageRow] = &[
             "token_2022_create_and_close_ata_paths_work",
             "token_2022_transfer_and_extension_rejections_are_checked",
             "execute_cpi_checked_token_2022_custody_equals_checks_extension_hash",
+            "execute_cpi_checked_allows_non_wallet_token_accounts_with_third_party_extensions",
         ],
         formal_harnesses: &[
             "token_transfer_fee_never_exceeds_amount_or_configured_max",
@@ -140,6 +141,7 @@ const COVERAGE: &[CoverageRow] = &[
             "execute_cpi_checked_rejects_denied_target_programs",
             "execute_cpi_checked_rejects_writable_wallet_account",
             "execute_cpi_checked_rejects_missing_economic_post_check",
+            "execute_cpi_checked_rejects_trailing_post_check_bytes_before_cpi",
             "execute_cpi_checked_rejects_non_executable_and_duplicate_remaining_accounts",
             "execute_cpi_checked_rejects_malformed_token_balance_post_checks",
         ],
@@ -174,6 +176,7 @@ const COVERAGE: &[CoverageRow] = &[
         runtime_tests: &[
             "execute_cpi_checked_mock_swap_enforces_max_input_and_min_output",
             "execute_cpi_checked_requires_state_checks_for_writable_non_token_accounts",
+            "execute_cpi_checked_requires_state_checks_for_writable_token_owned_non_accounts",
         ],
         formal_harnesses: &["execute_cpi_checked_parser_accepts_bounded_single_sol_check"],
     },
