@@ -443,6 +443,15 @@ pub fn token_multisig_contains_wallet(
 }
 
 #[inline(always)]
+pub fn token_2022_account_multisig_len_collision(data: &[u8]) -> bool {
+    data.len() == MULTISIG_LEN
+        && matches!(
+            data.get(TOKEN_2022_ACCOUNT_TYPE_OFFSET),
+            Some(&TOKEN_2022_ACCOUNT_TYPE_ACCOUNT)
+        )
+}
+
+#[inline(always)]
 pub fn unpack_token_account(
     data: &[u8],
     token_program_kind: TokenProgramKind,
@@ -472,8 +481,11 @@ fn looks_like_token_account(data: &[u8], token_program_kind: TokenProgramKind) -
             }
         }
         TokenProgramKind::Token2022 => {
-            if data.len() < TOKEN_ACCOUNT_LEN || data.len() == MULTISIG_LEN {
+            if data.len() < TOKEN_ACCOUNT_LEN {
                 return false;
+            }
+            if data.len() == MULTISIG_LEN {
+                return token_2022_account_multisig_len_collision(data);
             }
             if data.len() > TOKEN_ACCOUNT_LEN {
                 if data.len() <= TOKEN_2022_ACCOUNT_TYPE_OFFSET {

@@ -34,11 +34,17 @@ const expected = {
   deploymentStatus: 'deployed',
   programId: '36u7KMBuxjExvU6V2nfTX5SnNdYMGUupFiYouLzrgpfW',
   globalConfigPda: 'Fv7ffwFuAZBiCZ6dpBPKEgYEGMXpSArmqvaqfH35Gbod',
+  globalConfigBump: 255,
   initializer: '2KmHw8VbShuz9xfj3ecEjBM5nPKR5BcYHRDSFfK1286t',
   registryProgram: '8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C',
   collection: '6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA',
   feeTreasury: 'EbHMHsePB6GYxjqgz9k2aC4NACx63vTeBXzXyHWFvqPK',
   vaultActivationFeeLamports: 500000,
+  programDataAddress: 'CQ71N7pQrmH6pGwZtcC9ibXGSA3otJEVvpmpdmtQ5Gsw',
+  programDataSha256: 'ebe8e8469e47f7ddd66bfabd028ed271945ddb5136e43f4a38afc12ca8695b8a',
+  programDataSizeBytes: 149896,
+  upgradeAuthority: '2KmHw8VbShuz9xfj3ecEjBM5nPKR5BcYHRDSFfK1286t',
+  upgradePolicy: 'devnet-upgradeable',
 };
 
 function assertEqual(name, actual, expectedValue) {
@@ -54,6 +60,7 @@ assertEqual('cluster', manifest.cluster, expected.cluster);
 assertEqual('deploymentStatus', manifest.deploymentStatus, expected.deploymentStatus);
 assertEqual('program.id', manifest.program.id, expected.programId);
 assertEqual('program.globalConfigPda', manifest.program.globalConfigPda, expected.globalConfigPda);
+assertEqual('program.globalConfigBump', manifest.program.globalConfigBump, expected.globalConfigBump);
 assertEqual('expectedGlobalConfig.initializer', manifest.expectedGlobalConfig.initializer, expected.initializer);
 assertEqual('expectedGlobalConfig.registryProgram', manifest.expectedGlobalConfig.registryProgram, expected.registryProgram);
 assertEqual('expectedGlobalConfig.collection', manifest.expectedGlobalConfig.collection, expected.collection);
@@ -62,6 +69,31 @@ assertEqual(
   'expectedGlobalConfig.vaultActivationFeeLamports',
   manifest.expectedGlobalConfig.vaultActivationFeeLamports,
   expected.vaultActivationFeeLamports,
+);
+assertEqual(
+  'deploymentVerification.programDataAddress',
+  manifest.deploymentVerification.programDataAddress,
+  expected.programDataAddress,
+);
+assertEqual(
+  'deploymentVerification.programDataSha256',
+  manifest.deploymentVerification.programDataSha256,
+  expected.programDataSha256,
+);
+assertEqual(
+  'deploymentVerification.programDataSizeBytes',
+  manifest.deploymentVerification.programDataSizeBytes,
+  expected.programDataSizeBytes,
+);
+assertEqual(
+  'deploymentVerification.upgradeAuthority',
+  manifest.deploymentVerification.upgradeAuthority,
+  expected.upgradeAuthority,
+);
+assertEqual(
+  'deploymentVerification.upgradePolicy',
+  manifest.deploymentVerification.upgradePolicy,
+  expected.upgradePolicy,
 );
 
 const actualHash = crypto.createHash('sha256').update(elf).digest('hex');

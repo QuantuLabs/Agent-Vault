@@ -357,6 +357,18 @@ fn token_2022_account_data_with_withheld_fee(
     data
 }
 
+fn token_2022_account_multisig_len_collision_data(
+    mint: Address,
+    authority: Address,
+    amount: u64,
+) -> Vec<u8> {
+    let mut data = vec![0u8; TOKEN_MULTISIG_LEN];
+    data[0..TOKEN_ACCOUNT_LEN].copy_from_slice(&token_account_data(mint, authority, amount));
+    data[165] = 2;
+    data
+}
+
+
 fn transfer_fee_amount_extension_hash(withheld_amount: u64) -> [u8; 32] {
     let extension_type = 2u16.to_le_bytes();
     let payload_len = 8u16.to_le_bytes();
@@ -1625,7 +1637,7 @@ fn initializes_global_config_from_devnet_manifest_constants() {
         initialize_global_config_ix(EXPECTED_ACTIVATION_FEE_LAMPORTS),
     )
     .unwrap();
-    assert!(cu <= 18_000, "initialize_global_config CU: {cu}");
+    assert_cu_regression("initialize_global_config", cu, CU_BASELINE_INITIALIZE_GLOBAL_CONFIG);
 
     let account = svm.get_account(&global_config_pda()).unwrap();
     assert_eq!(account.owner, PROGRAM_ID);
@@ -1867,7 +1879,7 @@ fn routine_v0_instructions_do_not_charge_protocol_fees() {
         create_wallet_ix(agent_asset, vault_config, wallet),
     )
     .unwrap();
-    assert!(create_wallet_cu <= 17_500, "create_wallet CU: {create_wallet_cu}");
+    assert_cu_regression("create_wallet", create_wallet_cu, CU_BASELINE_CREATE_WALLET);
     let wallet_rent_floor = svm.get_balance(&wallet).unwrap();
     assert_no_fee(&svm);
 
@@ -1877,9 +1889,10 @@ fn routine_v0_instructions_do_not_charge_protocol_fees() {
         create_wallet_ix(agent_asset, vault_config, wallet_1),
     )
     .unwrap();
-    assert!(
-        create_wallet_1_cu <= 17_500,
-        "create_wallet second CU: {create_wallet_1_cu}"
+    assert_cu_regression(
+        "create_wallet_second",
+        create_wallet_1_cu,
+        CU_BASELINE_CREATE_WALLET_SECOND,
     );
     assert_no_fee(&svm);
 
@@ -1888,15 +1901,16 @@ fn routine_v0_instructions_do_not_charge_protocol_fees() {
         update_wallet_label_ix(agent_asset, vault_config, wallet),
     )
     .unwrap();
-    assert!(
-        update_label_cu <= 8_000,
-        "update_wallet_label CU: {update_label_cu}"
+    assert_cu_regression(
+        "update_wallet_label",
+        update_label_cu,
+        CU_BASELINE_UPDATE_WALLET_LABEL,
     );
     assert_no_fee(&svm);
 
     let deposit_cu =
         send_unsigned_tx(&mut svm, deposit_sol_ix(agent_asset, wallet, 1_000_000)).unwrap();
-    assert!(deposit_cu <= 5_000, "deposit_sol CU: {deposit_cu}");
+    assert_cu_regression("deposit_sol", deposit_cu, CU_BASELINE_DEPOSIT_SOL);
     assert_no_fee(&svm);
 
     let destination = Address::new_unique();
@@ -1906,7 +1920,7 @@ fn routine_v0_instructions_do_not_charge_protocol_fees() {
         withdraw_sol_ix(agent_asset, wallet, destination, 100_000),
     )
     .unwrap();
-    assert!(withdraw_cu <= 5_000, "withdraw_sol CU: {withdraw_cu}");
+    assert_cu_regression("withdraw_sol", withdraw_cu, CU_BASELINE_WITHDRAW_SOL);
     assert_no_fee(&svm);
 
     let transfer_sol_cu = send_unsigned_tx(
@@ -1914,10 +1928,7 @@ fn routine_v0_instructions_do_not_charge_protocol_fees() {
         transfer_sol_ix(agent_asset, 0, wallet, 1, wallet_1, 100_000),
     )
     .unwrap();
-    assert!(
-        transfer_sol_cu <= 7_000,
-        "transfer_sol CU: {transfer_sol_cu}"
-    );
+    assert_cu_regression("transfer_sol", transfer_sol_cu, CU_BASELINE_TRANSFER_SOL);
     assert_no_fee(&svm);
 
     let mint = Address::new_unique();
@@ -1927,9 +1938,10 @@ fn routine_v0_instructions_do_not_charge_protocol_fees() {
         create_wallet_ata_ix(agent_asset, vault_config, wallet, mint, TOKEN_PROGRAM, 0),
     )
     .unwrap();
-    assert!(
-        create_ata_cu <= 38_000,
-        "create_wallet_ata CU: {create_ata_cu}"
+    assert_cu_regression(
+        "create_wallet_ata",
+        create_ata_cu,
+        CU_BASELINE_CREATE_WALLET_ATA,
     );
     assert_no_fee(&svm);
 
@@ -1963,10 +1975,7 @@ fn routine_v0_instructions_do_not_charge_protocol_fees() {
         ),
     )
     .unwrap();
-    assert!(
-        transfer_spl_cu <= 22_000,
-        "transfer_spl CU: {transfer_spl_cu}"
-    );
+    assert_cu_regression("transfer_spl", transfer_spl_cu, CU_BASELINE_TRANSFER_SPL);
     assert_no_fee(&svm);
 
     let rent_receiver = Address::new_unique();
@@ -1983,9 +1992,10 @@ fn routine_v0_instructions_do_not_charge_protocol_fees() {
         ),
     )
     .unwrap();
-    assert!(
-        close_ata_cu <= 18_000,
-        "close_wallet_ata CU: {close_ata_cu}"
+    assert_cu_regression(
+        "close_wallet_ata",
+        close_ata_cu,
+        CU_BASELINE_CLOSE_WALLET_ATA,
     );
     assert_no_fee(&svm);
 
@@ -2006,13 +2016,13 @@ fn routine_v0_instructions_do_not_charge_protocol_fees() {
         wrap_sol_ix(agent_asset, vault_config, wallet, wallet_wsol_ata, 250_000),
     )
     .unwrap();
-    assert!(wrap_sol_cu <= 14_000, "wrap_sol CU: {wrap_sol_cu}");
+    assert_cu_regression("wrap_sol", wrap_sol_cu, CU_BASELINE_WRAP_SOL);
     assert_no_fee(&svm);
 
     send_unsigned_tx(&mut svm, sync_native_ix(wallet_wsol_ata)).unwrap();
     let unwrap_sol_cu =
         send_unsigned_tx(&mut svm, unwrap_sol_ix(agent_asset, vault_config, wallet)).unwrap();
-    assert!(unwrap_sol_cu <= 18_000, "unwrap_sol CU: {unwrap_sol_cu}");
+    assert_cu_regression("unwrap_sol", unwrap_sol_cu, CU_BASELINE_UNWRAP_SOL);
     assert_no_fee(&svm);
 
     let current_wallet_balance = svm.get_balance(&wallet).unwrap();
@@ -2021,9 +2031,10 @@ fn routine_v0_instructions_do_not_charge_protocol_fees() {
         execute_cpi_checked_memo_ix(agent_asset, vault_config, wallet, current_wallet_balance),
     )
     .unwrap();
-    assert!(
-        execute_cpi_cu <= 32_000,
-        "execute_cpi_checked memo CU: {execute_cpi_cu}"
+    assert_cu_regression(
+        "execute_cpi_checked_memo",
+        execute_cpi_cu,
+        CU_BASELINE_EXECUTE_CPI_CHECKED_MEMO,
     );
     assert_no_fee(&svm);
 
@@ -2040,10 +2051,7 @@ fn routine_v0_instructions_do_not_charge_protocol_fees() {
         close_wallet_ix(agent_asset, vault_config, wallet, rent_receiver),
     )
     .unwrap();
-    assert!(
-        close_wallet_cu <= 9_000,
-        "close_wallet CU: {close_wallet_cu}"
-    );
+    assert_cu_regression("close_wallet", close_wallet_cu, CU_BASELINE_CLOSE_WALLET);
     assert_no_fee(&svm);
 
     let reopen_cu = send_unsigned_tx(
@@ -2051,9 +2059,10 @@ fn routine_v0_instructions_do_not_charge_protocol_fees() {
         reopen_wallet_for_recovery_ix(agent_asset, vault_config, wallet),
     )
     .unwrap();
-    assert!(
-        reopen_cu <= 18_500,
-        "reopen_wallet_for_recovery CU: {reopen_cu}"
+    assert_cu_regression(
+        "reopen_wallet_for_recovery",
+        reopen_cu,
+        CU_BASELINE_REOPEN_WALLET_FOR_RECOVERY,
     );
     assert_no_fee(&svm);
 }
@@ -2427,10 +2436,7 @@ fn init_create_deposit_and_withdraw_sol_flow() {
         init_vault_config_ix(agent_asset, vault_config, agent_account),
     )
     .unwrap();
-    assert!(
-        init_vault_cu <= 30_000,
-        "init_vault_config CU: {init_vault_cu}"
-    );
+    assert_cu_regression("init_vault_config", init_vault_cu, CU_BASELINE_INIT_VAULT_CONFIG);
 
     let vault_account = svm.get_account(&vault_config).unwrap();
     assert_eq!(vault_account.owner, PROGRAM_ID);
@@ -2452,10 +2458,7 @@ fn init_create_deposit_and_withdraw_sol_flow() {
         create_wallet_ix(agent_asset, vault_config, wallet),
     )
     .unwrap();
-    assert!(
-        create_wallet_cu <= 18_000,
-        "create_wallet CU: {create_wallet_cu}"
-    );
+    assert_cu_regression("create_wallet", create_wallet_cu, CU_BASELINE_CREATE_WALLET);
     let vault_account = svm.get_account(&vault_config).unwrap();
     assert_eq!(
         unpack_vault_config(&vault_account.data)
@@ -2483,7 +2486,7 @@ fn init_create_deposit_and_withdraw_sol_flow() {
     let wallet_before_deposit = svm.get_balance(&wallet).unwrap();
     let deposit_cu =
         send_unsigned_tx(&mut svm, deposit_sol_ix(agent_asset, wallet, 1_000_000)).unwrap();
-    assert!(deposit_cu <= 16_000, "deposit_sol CU: {deposit_cu}");
+    assert_cu_regression("deposit_sol", deposit_cu, CU_BASELINE_DEPOSIT_SOL);
     assert_eq!(
         svm.get_balance(&wallet).unwrap(),
         wallet_before_deposit + 1_000_000
@@ -2496,7 +2499,7 @@ fn init_create_deposit_and_withdraw_sol_flow() {
         withdraw_sol_ix(agent_asset, wallet, destination, 400_000),
     )
     .unwrap();
-    assert!(withdraw_cu <= 16_000, "withdraw_sol CU: {withdraw_cu}");
+    assert_cu_regression("withdraw_sol", withdraw_cu, CU_BASELINE_WITHDRAW_SOL);
     assert_eq!(svm.get_balance(&destination).unwrap(), 400_001);
     assert_eq!(
         svm.get_balance(&wallet).unwrap(),
@@ -3178,9 +3181,10 @@ fn execute_cpi_checked_invokes_memo_with_only_wallet_meta() {
         execute_cpi_checked_memo_ix(agent_asset, vault_config, wallet, min_wallet_lamports),
     )
     .unwrap();
-    assert!(
-        execute_cu <= 50_000,
-        "execute_cpi_checked memo CU: {execute_cu}"
+    assert_cu_regression(
+        "execute_cpi_checked_memo",
+        execute_cu,
+        CU_BASELINE_EXECUTE_CPI_CHECKED_MEMO,
     );
 
     assert_eq!(svm.get_balance(&wallet).unwrap(), min_wallet_lamports);
@@ -3382,6 +3386,40 @@ fn execute_cpi_checked_rejects_frozen_or_malformed_wallet_tokens() {
     .unwrap_err();
     assert_eq!(
         malformed_error,
+        TransactionError::InstructionError(
+            0,
+            InstructionError::Custom(AgentVaultError::InvalidTokenAccount as u32),
+        )
+    );
+
+    let token_2022_mint = Address::new_unique();
+    install_mint(&mut svm, token_2022_mint, TOKEN_2022_PROGRAM, 6);
+    let token_2022_wallet_ata = ata_address(&wallet, &token_2022_mint, &TOKEN_2022_PROGRAM);
+    install_token_account(
+        &mut svm,
+        token_2022_wallet_ata,
+        TOKEN_2022_PROGRAM,
+        token_2022_account_multisig_len_collision_data(token_2022_mint, wallet, 1),
+    );
+    let collision_account = svm.get_account(&token_2022_wallet_ata).unwrap();
+    let collision_error = send_unsigned_tx(
+        &mut svm,
+        execute_cpi_checked_writable_account_state_snapshot_ix(
+            agent_asset,
+            vault_config,
+            wallet,
+            token_2022_wallet_ata,
+            TOKEN_2022_PROGRAM,
+            true,
+            min_wallet_lamports,
+            collision_account.lamports,
+            collision_account.data.len() as u32,
+            sha256_bytes(&collision_account.data),
+        ),
+    )
+    .unwrap_err();
+    assert_eq!(
+        collision_error,
         TransactionError::InstructionError(
             0,
             InstructionError::Custom(AgentVaultError::InvalidTokenAccount as u32),

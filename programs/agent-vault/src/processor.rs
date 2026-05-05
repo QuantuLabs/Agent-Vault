@@ -33,7 +33,8 @@ use crate::{
     },
     token_state::{
         parse_mint, parse_token_account_for_mint, probe_token_account_custody,
-        token_multisig_contains_wallet, TokenAccount, TokenAccountCustodyProbe, TOKEN_ACCOUNT_LEN,
+        token_2022_account_multisig_len_collision, token_multisig_contains_wallet, TokenAccount,
+        TokenAccountCustodyProbe, TOKEN_ACCOUNT_LEN,
     },
     validation::{
         assert_associated_token_program, assert_clock_sysvar, assert_native_mint, assert_owned_by,
@@ -1409,6 +1410,11 @@ fn classify_writable_token_account(
     };
     let probe = {
         let data = account.try_borrow()?;
+        if matches!(kind, TokenProgramKind::Token2022)
+            && token_2022_account_multisig_len_collision(&data)
+        {
+            return Err(AgentVaultError::InvalidTokenAccount.into());
+        }
         let Some(probe) = probe_token_account_custody(&data, kind)? else {
             return Ok(WritableTokenAccount::TokenOwnedNonAccount);
         };
