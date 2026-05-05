@@ -330,6 +330,31 @@ fn token_account_data(mint: Address, authority: Address, amount: u64) -> Vec<u8>
     data
 }
 
+fn token_account_data_with_delegate(
+    mint: Address,
+    authority: Address,
+    delegate: Address,
+    amount: u64,
+) -> Vec<u8> {
+    let mut data = token_account_data(mint, authority, amount);
+    data[72..76].copy_from_slice(&1u32.to_le_bytes());
+    data[76..108].copy_from_slice(delegate.as_ref());
+    data[121..129].copy_from_slice(&amount.to_le_bytes());
+    data
+}
+
+fn token_account_data_with_close_authority(
+    mint: Address,
+    authority: Address,
+    close_authority: Address,
+    amount: u64,
+) -> Vec<u8> {
+    let mut data = token_account_data(mint, authority, amount);
+    data[129..133].copy_from_slice(&1u32.to_le_bytes());
+    data[133..165].copy_from_slice(close_authority.as_ref());
+    data
+}
+
 fn token_multisig_data(signers: &[Address]) -> Vec<u8> {
     let mut data = vec![0u8; TOKEN_MULTISIG_LEN];
     data[0] = 1;
@@ -3471,6 +3496,58 @@ fn execute_cpi_checked_rejects_wallet_control_through_token_multisig() {
     .unwrap_err();
     assert_eq!(
         error,
+        TransactionError::InstructionError(
+            0,
+            InstructionError::Custom(AgentVaultError::InvalidTokenAccount as u32),
+        )
+    );
+
+    install_token_account(
+        &mut svm,
+        token_account,
+        TOKEN_PROGRAM,
+        token_account_data_with_delegate(mint, wallet, multisig, 1),
+    );
+    let delegate_error = send_unsigned_tx(
+        &mut svm,
+        execute_cpi_checked_writable_token_multisig_ix(
+            agent_asset,
+            vault_config,
+            wallet,
+            token_account,
+            multisig,
+            min_wallet_lamports,
+        ),
+    )
+    .unwrap_err();
+    assert_eq!(
+        delegate_error,
+        TransactionError::InstructionError(
+            0,
+            InstructionError::Custom(AgentVaultError::InvalidTokenAccount as u32),
+        )
+    );
+
+    install_token_account(
+        &mut svm,
+        token_account,
+        TOKEN_PROGRAM,
+        token_account_data_with_close_authority(mint, wallet, multisig, 1),
+    );
+    let close_authority_error = send_unsigned_tx(
+        &mut svm,
+        execute_cpi_checked_writable_token_multisig_ix(
+            agent_asset,
+            vault_config,
+            wallet,
+            token_account,
+            multisig,
+            min_wallet_lamports,
+        ),
+    )
+    .unwrap_err();
+    assert_eq!(
+        close_authority_error,
         TransactionError::InstructionError(
             0,
             InstructionError::Custom(AgentVaultError::InvalidTokenAccount as u32),
