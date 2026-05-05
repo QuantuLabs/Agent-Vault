@@ -1420,10 +1420,13 @@ fn classify_writable_token_account(
         };
         probe
     };
-    if token_probe_has_wallet_multisig_custody(&probe, final_accounts, wallet_key)? {
+    let has_wallet_custody = token_probe_has_wallet_custody(&probe, wallet_key);
+    if (!has_wallet_custody || token_probe_has_non_wallet_custody_key(&probe, wallet_key))
+        && token_probe_has_wallet_multisig_custody(&probe, final_accounts, wallet_key)?
+    {
         return Ok(WritableTokenAccount::WalletControlledThroughMultisig);
     }
-    if !token_probe_has_wallet_custody(&probe, wallet_key) {
+    if !has_wallet_custody {
         return Ok(WritableTokenAccount::NonWalletTokenAccount);
     }
 
@@ -1455,6 +1458,15 @@ fn token_probe_has_wallet_multisig_custody(
         i += 1;
     }
     Ok(false)
+}
+
+fn token_probe_has_non_wallet_custody_key(
+    account: &TokenAccountCustodyProbe,
+    wallet_key: &[u8; PUBKEY_LEN],
+) -> bool {
+    account.authority != *wallet_key
+        || optional_pubkey_is_some_and_not_equals(&account.close_authority, wallet_key)
+        || optional_pubkey_is_some_and_not_equals(&account.delegate, wallet_key)
 }
 
 fn post_checks_cover_account_state(
@@ -1887,6 +1899,10 @@ fn token_program_address(kind: TokenProgramKind) -> &'static Address {
 
 fn optional_pubkey_equals(value: &OptionalPubkey, key: &[u8; PUBKEY_LEN]) -> bool {
     matches!(value, OptionalPubkey::Some(value) if value == key)
+}
+
+fn optional_pubkey_is_some_and_not_equals(value: &OptionalPubkey, key: &[u8; PUBKEY_LEN]) -> bool {
+    matches!(value, OptionalPubkey::Some(value) if value != key)
 }
 
 fn optional_pubkey_is_none_or_equals(value: &OptionalPubkey, key: &[u8; PUBKEY_LEN]) -> bool {
