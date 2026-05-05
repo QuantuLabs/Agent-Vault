@@ -41,7 +41,7 @@ const expected = {
   feeTreasury: 'EbHMHsePB6GYxjqgz9k2aC4NACx63vTeBXzXyHWFvqPK',
   vaultActivationFeeLamports: 500000,
   programDataAddress: 'CQ71N7pQrmH6pGwZtcC9ibXGSA3otJEVvpmpdmtQ5Gsw',
-  programDataSha256: '6296c114e65656dd003f7403abf6cdb28a5fd2ade51d26fa023bd2cdc65801e8',
+  programDataSha256: 'eaad52b6b79755381a9943804e7b4a5c65a4c3100cf9ffa5042743b3a74868a4',
   programDataSizeBytes: 150264,
   upgradeAuthority: '2KmHw8VbShuz9xfj3ecEjBM5nPKR5BcYHRDSFfK1286t',
   upgradePolicy: 'devnet-upgradeable',
