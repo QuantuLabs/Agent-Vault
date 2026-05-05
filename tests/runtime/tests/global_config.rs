@@ -1505,11 +1505,48 @@ fn execute_cpi_checked_mock_swap_ix(
     amount_out: u64,
     min_output: u64,
 ) -> Instruction {
+    execute_cpi_checked_mock_swap_ix_with_decimals(
+        agent_asset,
+        vault_config,
+        wallet,
+        input_mint,
+        output_mint,
+        user_input,
+        pool_input,
+        pool_output,
+        user_output,
+        amount_in,
+        max_input,
+        amount_out,
+        min_output,
+        6,
+        6,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn execute_cpi_checked_mock_swap_ix_with_decimals(
+    agent_asset: Address,
+    vault_config: Address,
+    wallet: Address,
+    input_mint: Address,
+    output_mint: Address,
+    user_input: Address,
+    pool_input: Address,
+    pool_output: Address,
+    user_output: Address,
+    amount_in: u64,
+    max_input: u64,
+    amount_out: u64,
+    min_output: u64,
+    input_decimals: u8,
+    output_decimals: u8,
+) -> Instruction {
     let mut target_data = [0u8; 18];
     target_data[0..8].copy_from_slice(&amount_in.to_le_bytes());
     target_data[8..16].copy_from_slice(&amount_out.to_le_bytes());
-    target_data[16] = 6;
-    target_data[17] = 6;
+    target_data[16] = input_decimals;
+    target_data[17] = output_decimals;
 
     let mut data = Vec::with_capacity(1 + 6 + target_data.len() + 1 + (43 * 3) + (3 * 2));
     data.push(TAG_EXECUTE_CPI_CHECKED);
@@ -4108,6 +4145,116 @@ fn execute_cpi_checked_mock_swap_enforces_max_input_and_min_output() {
 }
 
 #[test]
+fn wsol_wrap_swap_and_unwrap_composes_with_checked_cpi() {
+    let mut svm = runtime();
+    install_mock_amm(&mut svm);
+    initialize_global_config(&mut svm);
+    svm.airdrop(&FEE_TREASURY, 1).unwrap();
+
+    let agent_asset = Address::new_unique();
+    let (vault_config, wallet) = create_agent_vault_and_wallet(&mut svm, agent_asset);
+    let native_reserve = token_account_rent();
+    let wallet_wsol_ata = ata_address(&wallet, &NATIVE_MINT, &TOKEN_PROGRAM);
+    svm.set_account(
+        NATIVE_MINT,
+        Account {
+            lamports: 1_000_000,
+            data: tokenkeg_mint_data(9),
+            owner: TOKEN_PROGRAM,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    svm.set_account(
+        wallet_wsol_ata,
+        Account {
+            lamports: native_reserve,
+            data: native_token_account_data_with_close_authority(
+                NATIVE_MINT,
+                wallet,
+                0,
+                native_reserve,
+                wallet,
+            ),
+            owner: TOKEN_PROGRAM,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    send_unsigned_tx(&mut svm, deposit_sol_ix(agent_asset, wallet, 1_000_000)).unwrap();
+    let wallet_before_wrap = svm.get_balance(&wallet).unwrap();
+    send_unsigned_tx(
+        &mut svm,
+        wrap_sol_ix(agent_asset, vault_config, wallet, wallet_wsol_ata, 250_000),
+    )
+    .unwrap();
+    send_unsigned_tx(&mut svm, sync_native_ix(wallet_wsol_ata)).unwrap();
+    assert_eq!(token_amount(&svm, &wallet_wsol_ata), 250_000);
+
+    let pool_input = Address::new_unique();
+    svm.set_account(
+        pool_input,
+        Account {
+            lamports: native_reserve,
+            data: native_token_account_data(
+                NATIVE_MINT,
+                Address::new_unique(),
+                0,
+                native_reserve,
+            ),
+            owner: TOKEN_PROGRAM,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let output_mint = Address::new_unique();
+    install_mint(&mut svm, output_mint, TOKEN_PROGRAM, 6);
+    let pool_output = ata_address(&wallet, &output_mint, &TOKEN_PROGRAM);
+    let user_output = Address::new_unique();
+    install_token_account(
+        &mut svm,
+        pool_output,
+        TOKEN_PROGRAM,
+        token_account_data(output_mint, wallet, 500),
+    );
+    install_token_account(
+        &mut svm,
+        user_output,
+        TOKEN_PROGRAM,
+        token_account_data(output_mint, Address::new_unique(), 0),
+    );
+
+    send_unsigned_tx(
+        &mut svm,
+        execute_cpi_checked_mock_swap_ix_with_decimals(
+            agent_asset,
+            vault_config,
+            wallet,
+            NATIVE_MINT,
+            output_mint,
+            wallet_wsol_ata,
+            pool_input,
+            pool_output,
+            user_output,
+            250_000,
+            250_000,
+            40,
+            40,
+            9,
+            6,
+        ),
+    )
+    .unwrap();
+    assert_eq!(token_amount(&svm, &wallet_wsol_ata), 0);
+    assert_eq!(token_amount(&svm, &user_output), 40);
+
+    send_unsigned_tx(&mut svm, unwrap_sol_ix(agent_asset, vault_config, wallet)).unwrap();
+    assert!(svm.get_account(&wallet_wsol_ata).is_none());
+    assert!(svm.get_balance(&wallet).unwrap() >= wallet_before_wrap);
+}
+
+#[test]
 fn execute_cpi_checked_requires_state_checks_for_writable_non_token_accounts() {
     let mut svm = runtime();
     initialize_global_config(&mut svm);
@@ -5189,6 +5336,90 @@ fn cross_agent_wallet_substitution_fails_on_protected_wallet_ops() {
         transfer_sol_ix(agent_b, 0, wallet_b, 0, wallet_a, 1),
         close_wallet_ix(agent_b, vault_b, wallet_a, rent_receiver),
         execute_cpi_checked_memo_ix(agent_b, vault_b, wallet_a, min_wallet_lamports),
+    ] {
+        let error = send_unsigned_tx(&mut svm, ix).unwrap_err();
+        assert_eq!(
+            error,
+            TransactionError::InstructionError(
+                0,
+                InstructionError::Custom(AgentVaultError::InvalidPda as u32),
+            )
+        );
+    }
+}
+
+#[test]
+fn token_wsol_and_recovery_cross_agent_wallet_substitution_fails() {
+    let mut svm = runtime();
+    initialize_global_config(&mut svm);
+    svm.airdrop(&FEE_TREASURY, 1).unwrap();
+
+    let agent_a = Address::new_unique();
+    let (_vault_a, wallet_a) = create_agent_vault_and_wallet(&mut svm, agent_a);
+    let agent_b = Address::new_unique();
+    let (vault_b, _wallet_b) = create_agent_vault_and_wallet(&mut svm, agent_b);
+    let mint = Address::new_unique();
+    install_mint(&mut svm, mint, TOKEN_PROGRAM, 6);
+    let source_ata = ata_address(&wallet_a, &mint, &TOKEN_PROGRAM);
+    let destination = Address::new_unique();
+    install_token_account(
+        &mut svm,
+        source_ata,
+        TOKEN_PROGRAM,
+        token_account_data(mint, wallet_a, 1),
+    );
+    install_token_account(
+        &mut svm,
+        destination,
+        TOKEN_PROGRAM,
+        token_account_data(mint, Address::new_unique(), 0),
+    );
+    let native_reserve = token_account_rent();
+    let wallet_wsol_ata = ata_address(&wallet_a, &NATIVE_MINT, &TOKEN_PROGRAM);
+    svm.set_account(
+        wallet_wsol_ata,
+        Account {
+            lamports: native_reserve,
+            data: native_token_account_data_with_close_authority(
+                NATIVE_MINT,
+                wallet_a,
+                0,
+                native_reserve,
+                wallet_a,
+            ),
+            owner: TOKEN_PROGRAM,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let rent_receiver = Address::new_unique();
+    svm.airdrop(&rent_receiver, 1).unwrap();
+
+    for ix in [
+        create_wallet_ata_ix(agent_b, vault_b, wallet_a, mint, TOKEN_PROGRAM, 0),
+        transfer_spl_ix(
+            agent_b,
+            vault_b,
+            wallet_a,
+            mint,
+            source_ata,
+            destination,
+            TOKEN_PROGRAM,
+            1,
+            6,
+            0,
+        ),
+        wrap_sol_ix(agent_b, vault_b, wallet_a, wallet_wsol_ata, 1),
+        unwrap_sol_ix(agent_b, vault_b, wallet_a),
+        close_wallet_ata_ix(
+            agent_b,
+            vault_b,
+            wallet_a,
+            mint,
+            TOKEN_PROGRAM,
+            rent_receiver,
+        ),
+        reopen_wallet_for_recovery_ix(agent_b, vault_b, wallet_a),
     ] {
         let error = send_unsigned_tx(&mut svm, ix).unwrap_err();
         assert_eq!(

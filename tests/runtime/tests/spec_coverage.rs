@@ -21,6 +21,7 @@ const COVERAGE: &[CoverageRow] = &[
             "protected_ops_follow_live_core_asset_owner_and_collection",
             "init_vault_config_rejects_malformed_registry_agent_account",
             "cross_agent_wallet_substitution_fails_on_protected_wallet_ops",
+            "token_wsol_and_recovery_cross_agent_wallet_substitution_fails",
         ],
         formal_harnesses: &["core_asset_parser_uses_spec_offsets"],
     },
@@ -126,6 +127,7 @@ const COVERAGE: &[CoverageRow] = &[
         requirement: "WSOL wrap and unwrap preserve wallet authority, rent floor, and native account invariants.",
         runtime_tests: &[
             "wsol_wrap_and_unwrap_preserve_wallet_authority_and_rent",
+            "wsol_wrap_swap_and_unwrap_composes_with_checked_cpi",
             "wsol_wrap_rejects_malformed_wallet_atas",
             "unwrap_sol_rejects_malformed_wsol_ata",
             "execute_cpi_checked_uses_redeemable_wsol_balance",
