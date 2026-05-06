@@ -74,6 +74,7 @@ verification in the separate `agent-vault-sdk` repository.
 - [Devnet release manifest](docs/RELEASE_MANIFEST.devnet.json)
 - [Devnet verification guide](docs/DEVNET.md)
 - [Program architecture](docs/PROGRAM.md)
+- [Security policy](SECURITY.md)
 
 ## Build And Test
 
