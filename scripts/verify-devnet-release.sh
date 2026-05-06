@@ -35,6 +35,7 @@ const elf = fs.readFileSync(process.env.AGENT_VAULT_DEVNET_ELF);
 const expected = {
   schema: 'agent-vault.release-manifest.v0',
   name: 'Agent Vault',
+  sourceCommit: 'd95784cdb60415543fab854a4b5129f0033706a3',
   cluster: 'devnet',
   deploymentStatus: 'deployed',
   programId: '36u7KMBuxjExvU6V2nfTX5SnNdYMGUupFiYouLzrgpfW',
@@ -61,6 +62,7 @@ function assertEqual(name, actual, expectedValue) {
 
 assertEqual('schema', manifest.schema, expected.schema);
 assertEqual('name', manifest.name, expected.name);
+assertEqual('sourceCommit', manifest.sourceCommit, expected.sourceCommit);
 assertEqual('cluster', manifest.cluster, expected.cluster);
 assertEqual('deploymentStatus', manifest.deploymentStatus, expected.deploymentStatus);
 assertEqual('program.id', manifest.program.id, expected.programId);
