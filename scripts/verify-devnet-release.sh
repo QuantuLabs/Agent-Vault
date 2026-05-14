@@ -36,6 +36,11 @@ const expected = {
   schema: 'agent-vault.release-manifest.v0',
   name: 'Agent Vault',
   sourceCommit: 'd95784cdb60415543fab854a4b5129f0033706a3',
+  buildCommand: 'NO_DNA=1 cargo build-sbf',
+  solanaCargoBuildSbf: '2.3.10',
+  platformTools: '1.48',
+  rustc: '1.84.1',
+  features: ['devnet'],
   cluster: 'devnet',
   deploymentStatus: 'deployed',
   programId: '36u7KMBuxjExvU6V2nfTX5SnNdYMGUupFiYouLzrgpfW',
@@ -63,6 +68,11 @@ function assertEqual(name, actual, expectedValue) {
 assertEqual('schema', manifest.schema, expected.schema);
 assertEqual('name', manifest.name, expected.name);
 assertEqual('sourceCommit', manifest.sourceCommit, expected.sourceCommit);
+assertEqual('build.command', manifest.build.command, expected.buildCommand);
+assertEqual('build.solanaCargoBuildSbf', manifest.build.solanaCargoBuildSbf, expected.solanaCargoBuildSbf);
+assertEqual('build.platformTools', manifest.build.platformTools, expected.platformTools);
+assertEqual('build.rustc', manifest.build.rustc, expected.rustc);
+assertEqual('build.features', JSON.stringify(manifest.build.features), JSON.stringify(expected.features));
 assertEqual('cluster', manifest.cluster, expected.cluster);
 assertEqual('deploymentStatus', manifest.deploymentStatus, expected.deploymentStatus);
 assertEqual('program.id', manifest.program.id, expected.programId);

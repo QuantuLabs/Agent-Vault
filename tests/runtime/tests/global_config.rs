@@ -1429,6 +1429,60 @@ fn execute_cpi_checked_set_authority_to_wallet_ix(
     }
 }
 
+fn execute_cpi_checked_set_authority_from_wallet_to_account_ix(
+    agent_asset: Address,
+    vault_config: Address,
+    wallet: Address,
+    token_account: Address,
+    mint: Address,
+    new_authority: Address,
+    amount: u64,
+) -> Instruction {
+    let target_data = [4u8];
+    let mut data = Vec::with_capacity(1 + 6 + target_data.len() + 1 + 43 + 167);
+    data.push(TAG_EXECUTE_CPI_CHECKED);
+    data.extend_from_slice(&0u16.to_le_bytes());
+    data.push(0);
+    data.push(4);
+    data.extend_from_slice(&(target_data.len() as u16).to_le_bytes());
+    data.extend_from_slice(&target_data);
+    data.push(2);
+    data.push(4);
+    data.push(1);
+    data.push(3);
+    data.extend_from_slice(mint.as_ref());
+    data.extend_from_slice(&amount.to_le_bytes());
+    data.push(10);
+    data.push(1);
+    data.push(3);
+    data.push(0);
+    data.extend_from_slice(mint.as_ref());
+    data.extend_from_slice(new_authority.as_ref());
+    data.push(0);
+    data.extend_from_slice(&[0u8; 32]);
+    data.push(0);
+    data.extend_from_slice(&[0u8; 32]);
+    data.push(1);
+    data.extend_from_slice(&SHA256_EMPTY);
+
+    Instruction {
+        program_id: PROGRAM_ID,
+        accounts: vec![
+            AccountMeta::new_readonly(INITIALIZER, true),
+            AccountMeta::new_readonly(global_config_pda(), false),
+            AccountMeta::new_readonly(vault_config, false),
+            AccountMeta::new_readonly(wallet, false),
+            AccountMeta::new_readonly(agent_asset, false),
+            AccountMeta::new_readonly(MOCK_AMM_PROGRAM, false),
+            AccountMeta::new(token_account, false),
+            AccountMeta::new_readonly(new_authority, false),
+            AccountMeta::new_readonly(mint, false),
+            AccountMeta::new_readonly(TOKEN_PROGRAM, false),
+        ],
+        data,
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn execute_cpi_checked_token_2022_fee_receive_ix(
     agent_asset: Address,
@@ -2493,6 +2547,28 @@ fn deposit_sol_is_permissionless_but_wallet_count_cannot_overflow() {
         TransactionError::InstructionError(
             0,
             InstructionError::Custom(AgentVaultError::WalletCountOverflow as u32),
+        )
+    );
+}
+
+#[test]
+fn fixed_account_instructions_reject_extra_accounts() {
+    let mut svm = runtime();
+    initialize_global_config(&mut svm);
+    svm.airdrop(&FEE_TREASURY, 1).unwrap();
+
+    let agent_asset = Address::new_unique();
+    let (_vault_config, wallet) = create_agent_vault_and_wallet(&mut svm, agent_asset);
+    let mut ix = deposit_sol_ix(agent_asset, wallet, 1);
+    ix.accounts
+        .push(AccountMeta::new_readonly(FEE_TREASURY, false));
+
+    let error = send_unsigned_tx(&mut svm, ix).unwrap_err();
+    assert_eq!(
+        error,
+        TransactionError::InstructionError(
+            0,
+            InstructionError::Custom(AgentVaultError::InvalidAccountCount as u32),
         )
     );
 }
@@ -3887,6 +3963,53 @@ fn execute_cpi_checked_rejects_actual_token_custody_mutation() {
     assert_eq!(
         u64::from_le_bytes(account.data[121..129].try_into().unwrap()),
         0
+    );
+}
+
+#[test]
+fn execute_cpi_checked_rejects_postchecked_wallet_ata_custody_loss() {
+    let mut svm = runtime();
+    install_mock_amm(&mut svm);
+    initialize_global_config(&mut svm);
+    svm.airdrop(&FEE_TREASURY, 1).unwrap();
+
+    let agent_asset = Address::new_unique();
+    let (vault_config, wallet) = create_agent_vault_and_wallet(&mut svm, agent_asset);
+    let mint = Address::new_unique();
+    install_mint(&mut svm, mint, TOKEN_PROGRAM, 6);
+    let wallet_ata = ata_address(&wallet, &mint, &TOKEN_PROGRAM);
+    install_token_account(
+        &mut svm,
+        wallet_ata,
+        TOKEN_PROGRAM,
+        token_account_data(mint, wallet, 10),
+    );
+    let attacker = Address::new_unique();
+    svm.airdrop(&attacker, 1).unwrap();
+
+    let error = send_unsigned_tx(
+        &mut svm,
+        execute_cpi_checked_set_authority_from_wallet_to_account_ix(
+            agent_asset,
+            vault_config,
+            wallet,
+            wallet_ata,
+            mint,
+            attacker,
+            10,
+        ),
+    )
+    .unwrap_err();
+    assert_eq!(
+        error,
+        TransactionError::InstructionError(
+            0,
+            InstructionError::Custom(AgentVaultError::CustodyChanged as u32),
+        )
+    );
+    assert_eq!(
+        &svm.get_account(&wallet_ata).unwrap().data[32..64],
+        wallet.as_ref()
     );
 }
 

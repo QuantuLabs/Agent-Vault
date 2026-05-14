@@ -92,7 +92,7 @@ fn process_initialize_global_config(
     accounts: &[AccountView],
     ix: &crate::instruction::InitializeGlobalConfig,
 ) -> ProgramResult {
-    require_account_count(accounts, 3)?;
+    require_exact_account_count(accounts, 3)?;
     let initializer = account(accounts, 0)?;
     let global_config = account(accounts, 1)?;
     let system_program = account(accounts, 2)?;
@@ -144,7 +144,7 @@ fn process_initialize_global_config(
 
 #[inline(never)]
 fn process_init_vault_config(program_id: &Address, accounts: &[AccountView]) -> ProgramResult {
-    require_account_count(accounts, 8)?;
+    require_exact_account_count(accounts, 8)?;
     let holder = account(accounts, 0)?;
     let global_config_account = account(accounts, 1)?;
     let vault_config_account = account(accounts, 2)?;
@@ -229,7 +229,7 @@ fn process_create_wallet(
     accounts: &[AccountView],
     ix: &CreateWallet,
 ) -> ProgramResult {
-    require_account_count(accounts, 5)?;
+    require_exact_account_count(accounts, 5)?;
     let holder = account(accounts, 0)?;
     let vault_config_account = account(accounts, 1)?;
     let wallet_account = account(accounts, 2)?;
@@ -291,7 +291,7 @@ fn process_update_wallet_label(
     accounts: &[AccountView],
     ix: &UpdateWalletLabel,
 ) -> ProgramResult {
-    require_account_count(accounts, 5)?;
+    require_exact_account_count(accounts, 5)?;
     let holder = account(accounts, 0)?;
     let global_config_account = account(accounts, 1)?;
     let vault_config_account = account(accounts, 2)?;
@@ -318,7 +318,7 @@ fn process_deposit_sol(
     accounts: &[AccountView],
     ix: &DepositSol,
 ) -> ProgramResult {
-    require_account_count(accounts, 4)?;
+    require_exact_account_count(accounts, 4)?;
     let funder = account(accounts, 0)?;
     let wallet_account = account(accounts, 1)?;
     let agent_asset = account(accounts, 2)?;
@@ -344,7 +344,7 @@ fn process_withdraw_sol(
     accounts: &[AccountView],
     ix: &WithdrawSol,
 ) -> ProgramResult {
-    require_account_count(accounts, 5)?;
+    require_exact_account_count(accounts, 5)?;
     let holder = account(accounts, 0)?;
     let wallet_account = account(accounts, 1)?;
     let destination = account(accounts, 2)?;
@@ -374,7 +374,7 @@ fn process_transfer_sol(
     accounts: &[AccountView],
     ix: &TransferSol,
 ) -> ProgramResult {
-    require_account_count(accounts, 5)?;
+    require_exact_account_count(accounts, 5)?;
     let holder = account(accounts, 0)?;
     let from_wallet_account = account(accounts, 1)?;
     let to_wallet_account = account(accounts, 2)?;
@@ -406,7 +406,7 @@ fn process_transfer_sol(
 
 #[inline(never)]
 fn process_close_wallet(program_id: &Address, accounts: &[AccountView]) -> ProgramResult {
-    require_account_count(accounts, 7)?;
+    require_exact_account_count(accounts, 7)?;
     let holder = account(accounts, 0)?;
     let global_config_account = account(accounts, 1)?;
     let vault_config_account = account(accounts, 2)?;
@@ -443,7 +443,7 @@ fn process_reopen_wallet_for_recovery(
     accounts: &[AccountView],
     ix: &ReopenWalletForRecovery,
 ) -> ProgramResult {
-    require_account_count(accounts, 6)?;
+    require_exact_account_count(accounts, 6)?;
     let holder = account(accounts, 0)?;
     let global_config_account = account(accounts, 1)?;
     let vault_config_account = account(accounts, 2)?;
@@ -490,7 +490,7 @@ fn process_create_wallet_ata(
     accounts: &[AccountView],
     ix: &CreateWalletAta,
 ) -> ProgramResult {
-    require_account_count(accounts, 10)?;
+    require_exact_account_count(accounts, 10)?;
     let holder = account(accounts, 0)?;
     let global_config_account = account(accounts, 1)?;
     let vault_config_account = account(accounts, 2)?;
@@ -550,7 +550,7 @@ fn process_transfer_spl(
     accounts: &[AccountView],
     ix: &TransferSpl,
 ) -> ProgramResult {
-    require_account_count(accounts, 9)?;
+    require_exact_account_count(accounts, 9)?;
     let holder = account(accounts, 0)?;
     let global_config_account = account(accounts, 1)?;
     let vault_config_account = account(accounts, 2)?;
@@ -664,7 +664,7 @@ fn process_transfer_spl(
 
 #[inline(never)]
 fn process_wrap_sol(program_id: &Address, accounts: &[AccountView], ix: &WrapSol) -> ProgramResult {
-    require_account_count(accounts, 9)?;
+    require_exact_account_count(accounts, 9)?;
     let holder = account(accounts, 0)?;
     let global_config_account = account(accounts, 1)?;
     let vault_config_account = account(accounts, 2)?;
@@ -710,7 +710,7 @@ fn process_unwrap_sol(
     accounts: &[AccountView],
     ix: &IndexedWallet,
 ) -> ProgramResult {
-    require_account_count(accounts, 7)?;
+    require_exact_account_count(accounts, 7)?;
     let holder = account(accounts, 0)?;
     let global_config_account = account(accounts, 1)?;
     let vault_config_account = account(accounts, 2)?;
@@ -754,7 +754,7 @@ fn process_close_wallet_ata(
     accounts: &[AccountView],
     ix: &IndexedWallet,
 ) -> ProgramResult {
-    require_account_count(accounts, 10)?;
+    require_exact_account_count(accounts, 10)?;
     let holder = account(accounts, 0)?;
     let global_config_account = account(accounts, 1)?;
     let vault_config_account = account(accounts, 2)?;
@@ -978,7 +978,13 @@ fn execute_checked_cpi_with_final_accounts<'a>(
         &mut token_coverage,
         &mut token_coverage_loaded,
     )?;
-    evaluate_post_checks(ctx.ix, final_views, &pre_values, &custody_snapshots)
+    evaluate_post_checks(
+        ctx.ix,
+        final_views,
+        ctx.wallet_key,
+        &pre_values,
+        &custody_snapshots,
+    )
 }
 
 #[inline(never)]
@@ -1546,6 +1552,7 @@ fn snapshot_post_checks(
 fn evaluate_post_checks(
     ix: &crate::instruction::ExecuteCpiChecked<'_>,
     final_accounts: &[&AccountView],
+    wallet_key: &[u8; PUBKEY_LEN],
     pre_values: &[u64; crate::constants::MAX_POST_CHECKS as usize],
     custody_snapshots: &[CustodySnapshot; crate::constants::MAX_POST_CHECKS as usize],
 ) -> ProgramResult {
@@ -1709,6 +1716,11 @@ fn evaluate_post_checks(
                 {
                     return Err(AgentVaultError::PostCheckFailed.into());
                 }
+                enforce_wallet_ata_custody_safe(
+                    final_account(final_accounts, token_account_index)?,
+                    wallet_key,
+                    &snapshot,
+                )?;
             }
             PostCheck::AccountOwnerEquals {
                 account_index,
@@ -1736,6 +1748,29 @@ fn evaluate_post_checks(
             }
         }
         i += 1;
+    }
+    Ok(())
+}
+
+fn enforce_wallet_ata_custody_safe(
+    token_account: &AccountView,
+    wallet_key: &[u8; PUBKEY_LEN],
+    snapshot: &CustodySnapshot,
+) -> ProgramResult {
+    let expected_ata = derive_associated_token_account(
+        &Address::new_from_array(*wallet_key),
+        &Address::new_from_array(snapshot.mint),
+        token_program_address(snapshot.token_program_kind),
+    )?;
+    if token_account.address() != &expected_ata.address {
+        return Ok(());
+    }
+    if snapshot.authority != *wallet_key
+        || !snapshot.delegate.is_none()
+        || snapshot.delegated_amount != 0
+        || !optional_pubkey_is_none_or_equals(&snapshot.close_authority, wallet_key)
+    {
+        return Err(AgentVaultError::CustodyChanged.into());
     }
     Ok(())
 }
@@ -2203,6 +2238,16 @@ fn rent_minimum(rent_sysvar: &AccountView, data_len: usize) -> Result<u64, Progr
 fn require_account_count(accounts: &[AccountView], count: usize) -> Result<(), ProgramError> {
     if accounts.len() < count {
         return Err(ProgramError::NotEnoughAccountKeys);
+    }
+    Ok(())
+}
+
+fn require_exact_account_count(accounts: &[AccountView], count: usize) -> Result<(), ProgramError> {
+    if accounts.len() < count {
+        return Err(ProgramError::NotEnoughAccountKeys);
+    }
+    if accounts.len() > count {
+        return Err(AgentVaultError::InvalidAccountCount.into());
     }
     Ok(())
 }

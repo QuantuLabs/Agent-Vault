@@ -2,10 +2,10 @@
 
 ## Status
 
-Agent Vault currently has a devnet version. It has not received an external
-production audit and there is no mainnet release. Do not use this program with
-valuable assets until a mainnet release, published release manifest, and
-production security review are available.
+Agent Vault currently has a devnet version and an internal v0.1.0 security
+review. It has not received an external production audit and there is no mainnet
+release. Do not use this program with valuable assets until a mainnet release,
+published release manifest, and production security review are available.
 
 ## Reporting Vulnerabilities
 
@@ -25,6 +25,9 @@ in any report.
 
 Only the latest `main` branch and the published devnet manifest are currently
 supported for security review.
+
+The internal v0.1.0 review report is tracked in
+[`docs/SECURITY_REVIEW_0.1.0.md`](docs/SECURITY_REVIEW_0.1.0.md).
 
 ## Developer Safety Checklist
 

@@ -35,6 +35,9 @@ pub fn process_instruction(
     if accounts.len() == 6 && data.len() == 18 && data[0] == 3 {
         return transfer_checked_with_fee(accounts, data);
     }
+    if accounts.len() == 5 && data.len() == 1 && data[0] == 4 {
+        return set_account_owner_from_wallet_to_account(accounts);
+    }
     if accounts.len() == 8 && data.len() == 18 {
         return swap(accounts, data);
     }
@@ -191,6 +194,29 @@ fn set_account_owner_to_wallet(accounts: &[AccountView]) -> ProgramResult {
         data: &ix_data,
     };
     invoke_signed(&instruction, &[token_account, current_authority], &[])
+}
+
+fn set_account_owner_from_wallet_to_account(accounts: &[AccountView]) -> ProgramResult {
+    let wallet = account(accounts, 0)?;
+    let token_account = account(accounts, 1)?;
+    let new_authority = account(accounts, 2)?;
+    let token_program = account(accounts, 4)?;
+
+    let metas = [
+        InstructionAccount::writable(token_account.address()),
+        InstructionAccount::readonly_signer(wallet.address()),
+    ];
+    let mut ix_data = [0u8; 35];
+    ix_data[0] = 6;
+    ix_data[1] = 2;
+    ix_data[2] = 1;
+    ix_data[3..35].copy_from_slice(new_authority.address().as_ref());
+    let instruction = InstructionView {
+        program_id: token_program.address(),
+        accounts: &metas,
+        data: &ix_data,
+    };
+    invoke_signed(&instruction, &[token_account, wallet], &[])
 }
 
 fn transfer_checked_with_fee(accounts: &[AccountView], data: &[u8]) -> ProgramResult {

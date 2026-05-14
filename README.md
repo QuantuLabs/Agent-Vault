@@ -10,8 +10,8 @@ For application integration, start with the
 The app-facing flow is:
 
 ```ts
-const registered = await identity.registerAgent(metadataUri, { collectionPointer })
-const agentAsset = registered.asset
+// Register with 8004-solana first.
+const agentAsset = registeredAgent.asset // returned by 8004-solana registration
 const vault = AgentVaultClient.devnet({ connection, signer })
 const agent = vault.agent(agentAsset)
 
@@ -33,7 +33,8 @@ NO_DNA=1 cargo test --offline --manifest-path tests/runtime/Cargo.toml -- --test
 
 This is the current devnet version.
 
-- The program is unaudited.
+- Internal v0.1.0 security review completed.
+- No external production audit has been completed.
 - There is no mainnet release.
 - Do not use this with valuable assets.
 
@@ -49,7 +50,7 @@ Devnet status:    deployed
 The devnet release metadata is tracked in
 [`docs/RELEASE_MANIFEST.devnet.json`](docs/RELEASE_MANIFEST.devnet.json).
 The `Devnet collection` above is the onchain Core collection enforced by Agent
-Vault, not the 8004 `collectionPointer` string passed to the SDK.
+Vault, not an offchain agent metadata URI.
 
 ## What It Does
 
@@ -91,6 +92,10 @@ loader targets, keeps the wallet account readonly, and enforces custody checks f
 writable wallet-controlled token accounts. SPL Token multisig authorities that
 are satisfiable by the wallet PDA are intentionally rejected in V0.
 
+Fixed-account instructions reject extra accounts. `execute_cpi_checked` is the
+only instruction with dynamic remaining accounts, and its declared account count
+must match the transaction accounts exactly.
+
 The intended SDK/mainnet client behavior is fail-closed unless the canonical
 deployment, global config, ProgramData hash, and upgrade authority policy all
 verify against a published release manifest. The TypeScript SDK implements this
@@ -103,6 +108,7 @@ verification in the separate `agent-vault-sdk` repository.
 - Devnet verification: [`docs/DEVNET.md`](docs/DEVNET.md)
 - Devnet release manifest: [`docs/RELEASE_MANIFEST.devnet.json`](docs/RELEASE_MANIFEST.devnet.json)
 - Security policy: [`SECURITY.md`](SECURITY.md)
+- Internal security review: [`docs/SECURITY_REVIEW_0.1.0.md`](docs/SECURITY_REVIEW_0.1.0.md)
 
 ## Build And Test
 
@@ -111,6 +117,7 @@ NO_DNA=1 cargo clippy --offline --all-targets -- -D warnings
 NO_DNA=1 cargo test --offline
 NO_DNA=1 cargo build-sbf
 NO_DNA=1 cargo test --offline --manifest-path tests/runtime/Cargo.toml -- --test-threads=1
+NO_DNA=1 ./scripts/verify-devnet-onchain.sh
 NO_DNA=1 scripts/localnet-e2e.py
 NO_DNA=1 ./scripts/verify-formal.sh
 ```
@@ -140,7 +147,7 @@ scripts                release verification helpers
 
 The TypeScript SDK is maintained in the separate
 [Agent-Vault-SDK](https://github.com/QuantuLabs/Agent-Vault-SDK) repository. Its
-npm package name is `agent-vault`; it provides the high-level `.wallets`
+npm package name is `@quantulabs/agent-vault`; it provides the high-level `.wallets`
 developer surface for devnet testing.
 
 Register agents with

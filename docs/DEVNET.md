@@ -1,7 +1,7 @@
 # Agent Vault Devnet
 
-Agent Vault currently has a devnet version. It is unaudited and not a mainnet
-release.
+Agent Vault currently has a devnet version. It has an internal v0.1.0 security
+review, but no external production audit and no mainnet release.
 
 ## Fast Path
 
@@ -10,6 +10,7 @@ Program checks:
 ```bash
 NO_DNA=1 cargo test --offline
 NO_DNA=1 cargo test --offline --manifest-path tests/runtime/Cargo.toml -- --test-threads=1
+NO_DNA=1 ./scripts/verify-devnet-onchain.sh
 ```
 
 SDK preflight:
@@ -46,6 +47,7 @@ From the program repository:
 NO_DNA=1 cargo test --offline
 NO_DNA=1 cargo test --offline --manifest-path tests/runtime/Cargo.toml -- --test-threads=1
 NO_DNA=1 cargo test --offline --manifest-path tests/runtime/Cargo.toml devnet_release_cost_report -- --nocapture --test-threads=1
+NO_DNA=1 ./scripts/verify-devnet-onchain.sh
 NO_DNA=1 ./scripts/verify-formal.sh
 ```
 
@@ -57,8 +59,8 @@ NO_DNA=1 ./scripts/verify-devnet-release.sh
 
 That script runs formatting, Clippy, unit tests, SBF build checks, LiteSVM
 runtime tests, localnet e2e, Kani harnesses, and local release artifact hash/size
-checks. It does not perform live RPC reads; use the SDK preflight below for
-onchain devnet deployment verification.
+checks. `verify-devnet-onchain.sh` is read-only and verifies the live devnet
+Program, ProgramData hash/size/authority, and global config against the manifest.
 
 ## SDK Preflight
 

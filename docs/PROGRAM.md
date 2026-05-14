@@ -85,6 +85,10 @@ transfer_sol   live Core owner + compiled collection + both wallet PDAs
 Token, WSOL, recovery, and checked-CPI paths validate `global_config` and
 `vault_config` before using their semantic fields.
 
+All fixed-account instructions require the exact account list length. Extra
+accounts are rejected so client mistakes cannot silently change the reviewed
+account surface.
+
 ## Token Scope
 
 Tokenkeg support covers wallet-owned ATA creation, checked transfers, and ATA
@@ -147,6 +151,7 @@ Primary local verification:
 ```bash
 NO_DNA=1 cargo test --offline
 NO_DNA=1 cargo test --offline --manifest-path tests/runtime/Cargo.toml -- --test-threads=1
+NO_DNA=1 ./scripts/verify-devnet-onchain.sh
 NO_DNA=1 ./scripts/verify-formal.sh
 ```
 

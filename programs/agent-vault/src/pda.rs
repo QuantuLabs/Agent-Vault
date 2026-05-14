@@ -211,7 +211,7 @@ mod host_pda {
     const MAX_SEED_LEN: usize = 32;
 
     pub fn find_program_address(seeds: &[&[u8]], program_id: &Address) -> Option<(Address, u8)> {
-        if seeds.len() >= MAX_SEEDS || seeds.iter().any(|seed| seed.len() > MAX_SEED_LEN) {
+        if seeds.len() > MAX_SEEDS || seeds.iter().any(|seed| seed.len() > MAX_SEED_LEN) {
             return None;
         }
 
@@ -726,5 +726,30 @@ mod tests {
             validate_global_config_pda(&wrong_address, pda.bump, &program_id),
             Err(AgentVaultError::InvalidPda.into())
         );
+    }
+
+    #[test]
+    fn host_pda_allows_solana_max_seed_count() {
+        let program_id = Address::new_from_array([8u8; 32]);
+        let seeds: [&[u8]; 16] = [
+            b"0".as_ref(),
+            b"1".as_ref(),
+            b"2".as_ref(),
+            b"3".as_ref(),
+            b"4".as_ref(),
+            b"5".as_ref(),
+            b"6".as_ref(),
+            b"7".as_ref(),
+            b"8".as_ref(),
+            b"9".as_ref(),
+            b"10".as_ref(),
+            b"11".as_ref(),
+            b"12".as_ref(),
+            b"13".as_ref(),
+            b"14".as_ref(),
+            b"15".as_ref(),
+        ];
+
+        assert!(derive_pda(&seeds, &program_id).is_ok());
     }
 }

@@ -48,6 +48,7 @@ pub enum AgentVaultError {
     AccountLimitExceeded = 42,
     DataLimitExceeded = 43,
     UnsupportedInstruction = 44,
+    InvalidAccountCount = 45,
 }
 
 impl From<AgentVaultError> for ProgramError {

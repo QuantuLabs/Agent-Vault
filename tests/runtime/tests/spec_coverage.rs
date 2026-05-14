@@ -9,6 +9,8 @@ const RUNTIME_TEST_SOURCE: &str = include_str!("global_config.rs");
 const KANI_HARNESS_SOURCE: &str = include_str!("../../../programs/agent-vault/src/kani_harness.rs");
 const VERIFY_DEVNET_RELEASE_SCRIPT: &str =
     include_str!("../../../scripts/verify-devnet-release.sh");
+const VERIFY_DEVNET_ONCHAIN_SCRIPT: &str =
+    include_str!("../../../scripts/verify-devnet-onchain.sh");
 const VERIFY_FORMAL_SCRIPT: &str = include_str!("../../../scripts/verify-formal.sh");
 const LOCALNET_E2E_SCRIPT: &str = include_str!("../../../scripts/localnet-e2e.py");
 
@@ -65,6 +67,7 @@ const COVERAGE: &[CoverageRow] = &[
             "init_create_deposit_and_withdraw_sol_flow",
             "dusted_system_owned_wallet_pda_can_be_created_and_reopened",
             "update_wallet_label_rejects_wrong_index_and_recovery_wallets",
+            "fixed_account_instructions_reject_extra_accounts",
         ],
         formal_harnesses: &[
             "vault_config_pack_unpack_roundtrip_with_reserved_v0_flags",
@@ -162,6 +165,7 @@ const COVERAGE: &[CoverageRow] = &[
             "execute_cpi_checked_rejects_wallet_control_through_token_multisig",
             "execute_cpi_checked_validates_token_custody_equals_and_ata_status",
             "execute_cpi_checked_rejects_actual_token_custody_mutation",
+            "execute_cpi_checked_rejects_postchecked_wallet_ata_custody_loss",
             "execute_cpi_checked_token_custody_equals_supports_new_wallet_control",
         ],
         formal_harnesses: &[
@@ -195,6 +199,7 @@ const COVERAGE: &[CoverageRow] = &[
         requirement: "Release verification runs format, Clippy, unit, runtime, localnet e2e, formal, SBF, and manifest hash checks.",
         runtime_tests: &[
             "scripts/verify-devnet-release.sh",
+            "scripts/verify-devnet-onchain.sh",
             "scripts/localnet-e2e.py",
             "devnet_release_cost_report",
         ],
@@ -273,6 +278,12 @@ fn runtime_item_exists(name: &str) -> bool {
             && VERIFY_DEVNET_RELEASE_SCRIPT.contains("--test-threads=1")
             && VERIFY_DEVNET_RELEASE_SCRIPT.contains("localnet-e2e.py")
             && VERIFY_DEVNET_RELEASE_SCRIPT.contains("devnet_release_cost_report");
+    }
+    if name == "scripts/verify-devnet-onchain.sh" {
+        return VERIFY_DEVNET_ONCHAIN_SCRIPT.contains("'program', 'show'")
+            && VERIFY_DEVNET_ONCHAIN_SCRIPT.contains("'program', 'dump'")
+            && VERIFY_DEVNET_ONCHAIN_SCRIPT.contains("programDataSha256")
+            && VERIFY_DEVNET_ONCHAIN_SCRIPT.contains("global_config");
     }
     if name == "scripts/localnet-e2e.py" {
         return LOCALNET_E2E_SCRIPT.contains("solana-test-validator")
