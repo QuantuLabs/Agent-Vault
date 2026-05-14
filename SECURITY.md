@@ -2,10 +2,10 @@
 
 ## Status
 
-Agent Vault is a work in progress devnet candidate. It has not received an
-external production audit and there is no mainnet release. Do not use this
-program with valuable assets until a mainnet release, published release manifest,
-and production security review are available.
+Agent Vault currently has a devnet version. It has not received an external
+production audit and there is no mainnet release. Do not use this program with
+valuable assets until a mainnet release, published release manifest, and
+production security review are available.
 
 ## Reporting Vulnerabilities
 
@@ -23,12 +23,12 @@ in any report.
 
 ## Supported Versions
 
-Only the latest `main` branch and the published devnet candidate manifest are
-currently supported for security review.
+Only the latest `main` branch and the published devnet manifest are currently
+supported for security review.
 
 ## Developer Safety Checklist
 
-- Do not use Agent Vault with valuable assets while it is a devnet candidate.
+- Do not use Agent Vault with valuable assets while it is devnet-only.
 - Keep SDK writes gated by deployment verification.
 - Keep `allowUnverifiedDeployment` limited to localnet or devnet deployments you control.
 - In docs and integrations, distinguish `agentAsset` from wallet PDA addresses and wallet indexes.

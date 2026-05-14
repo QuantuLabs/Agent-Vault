@@ -10,8 +10,9 @@ For application integration, start with the
 The app-facing flow is:
 
 ```ts
-const vault = AgentVaultClient.devnet({ connection, identity, signer })
-const { agentAsset } = await vault.registerAgent(metadata, { collectionPointer, uploadJson })
+const registered = await identity.registerAgent(metadataUri, { collectionPointer })
+const agentAsset = registered.asset
+const vault = AgentVaultClient.devnet({ connection, signer })
 const agent = vault.agent(agentAsset)
 
 await agent.wallets.setup({ labels: ["treasury", "trading"] })
@@ -30,11 +31,10 @@ NO_DNA=1 cargo test --offline --manifest-path tests/runtime/Cargo.toml -- --test
 
 ## Status
 
-This repository is a **work in progress**.
+This is the current devnet version.
 
 - The program is unaudited.
 - There is no mainnet release.
-- The devnet artifact is deployed as a candidate.
 - Do not use this with valuable assets.
 
 ## Current Deployment Facts
@@ -43,10 +43,10 @@ This repository is a **work in progress**.
 Program ID:        36u7KMBuxjExvU6V2nfTX5SnNdYMGUupFiYouLzrgpfW
 Devnet registry:  8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C
 Devnet collection: 6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA
-Devnet status:    deployed candidate
+Devnet status:    deployed
 ```
 
-The devnet candidate release metadata is tracked in
+The devnet release metadata is tracked in
 [`docs/RELEASE_MANIFEST.devnet.json`](docs/RELEASE_MANIFEST.devnet.json).
 The `Devnet collection` above is the onchain Core collection enforced by Agent
 Vault, not the 8004 `collectionPointer` string passed to the SDK.
@@ -138,9 +138,10 @@ scripts                release verification helpers
 
 ## SDK
 
-The WIP TypeScript SDK is maintained separately in the `agent-vault-sdk`
-workspace folder. Its npm package name is `agent-vault`; it provides the
-high-level `.identities` and `.wallets` developer surface for devnet testing.
+The TypeScript SDK is maintained in the separate
+[Agent-Vault-SDK](https://github.com/QuantuLabs/Agent-Vault-SDK) repository. Its
+npm package name is `agent-vault`; it provides the high-level `.identities` and
+`.wallets` developer surface for devnet testing.
 
 ```ts
 const agent = vault.agent(agentAsset)

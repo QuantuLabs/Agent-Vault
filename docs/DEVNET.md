@@ -1,7 +1,7 @@
 # Agent Vault Devnet
 
-Agent Vault is currently a devnet candidate. It is WIP, unaudited, and not a
-mainnet release.
+Agent Vault currently has a devnet version. It is unaudited and not a mainnet
+release.
 
 ## Fast Path
 
@@ -28,7 +28,7 @@ NO_DNA=1 npm run e2e:devnet
 Program ID:         36u7KMBuxjExvU6V2nfTX5SnNdYMGUupFiYouLzrgpfW
 8004 registry:     8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C
 8004 collection:   6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA
-Release status:    deployed candidate
+Release status:    deployed
 ```
 
 The release manifest is tracked in
