@@ -140,8 +140,12 @@ scripts                release verification helpers
 
 The TypeScript SDK is maintained in the separate
 [Agent-Vault-SDK](https://github.com/QuantuLabs/Agent-Vault-SDK) repository. Its
-npm package name is `agent-vault`; it provides the high-level `.identities` and
-`.wallets` developer surface for devnet testing.
+npm package name is `agent-vault`; it provides the high-level `.wallets`
+developer surface for devnet testing.
+
+Register agents with
+[`8004-solana`](https://github.com/QuantuLabs/8004-solana-ts#readme), then pass
+the returned Core Asset pubkey to Agent Vault as `agentAsset`.
 
 ```ts
 const agent = vault.agent(agentAsset)
