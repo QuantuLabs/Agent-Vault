@@ -3,6 +3,31 @@
 Agent Vault is a Pinocchio program on Solana that lets the live owner of an
 8004 Metaplex Core Asset control multiple indexed PDA wallets.
 
+## Start Here
+
+For application integration, start with the
+[Agent Vault SDK README](https://github.com/QuantuLabs/Agent-Vault-SDK#readme).
+The app-facing flow is:
+
+```ts
+const vault = AgentVaultClient.devnet({ connection, identity, signer })
+const { agentAsset } = await vault.registerAgent(metadata, { collectionPointer, uploadJson })
+const agent = vault.agent(agentAsset)
+
+await agent.wallets.setup({ labels: ["treasury", "trading"] })
+const wallets = await agent.wallets.listAll()
+```
+
+`agentAsset` is the 8004 Core Asset pubkey. `wallet` is a numeric index inside
+that agent vault (`0`, `1`, ...), not the wallet PDA address.
+
+For program work, build and test this repo with:
+
+```bash
+NO_DNA=1 cargo test --offline
+NO_DNA=1 cargo test --offline --manifest-path tests/runtime/Cargo.toml -- --test-threads=1
+```
+
 ## Status
 
 This repository is a **work in progress**.
@@ -23,6 +48,8 @@ Devnet status:    deployed candidate
 
 The devnet candidate release metadata is tracked in
 [`docs/RELEASE_MANIFEST.devnet.json`](docs/RELEASE_MANIFEST.devnet.json).
+The `Devnet collection` above is the onchain Core collection enforced by Agent
+Vault, not the 8004 `collectionPointer` string passed to the SDK.
 
 ## What It Does
 
@@ -69,12 +96,13 @@ deployment, global config, ProgramData hash, and upgrade authority policy all
 verify against a published release manifest. The TypeScript SDK implements this
 verification in the separate `agent-vault-sdk` repository.
 
-## Release Metadata
+## Docs Map
 
-- [Devnet release manifest](docs/RELEASE_MANIFEST.devnet.json)
-- [Devnet verification guide](docs/DEVNET.md)
-- [Program architecture](docs/PROGRAM.md)
-- [Security policy](SECURITY.md)
+- App integration: [Agent Vault SDK README](https://github.com/QuantuLabs/Agent-Vault-SDK#readme)
+- Program architecture: [`docs/PROGRAM.md`](docs/PROGRAM.md)
+- Devnet verification: [`docs/DEVNET.md`](docs/DEVNET.md)
+- Devnet release manifest: [`docs/RELEASE_MANIFEST.devnet.json`](docs/RELEASE_MANIFEST.devnet.json)
+- Security policy: [`SECURITY.md`](SECURITY.md)
 
 ## Build And Test
 
@@ -113,6 +141,16 @@ scripts                release verification helpers
 The WIP TypeScript SDK is maintained separately in the `agent-vault-sdk`
 workspace folder. Its npm package name is `agent-vault`; it provides the
 high-level `.identities` and `.wallets` developer surface for devnet testing.
+
+```ts
+const agent = vault.agent(agentAsset)
+const wallets = await agent.wallets.listAll()
+```
+
+`agentAsset` is the 8004 Core Asset public key for the agent. The `wallet`
+parameter used by write methods is the numeric wallet index inside that agent
+vault (`0`, `1`, ...); the SDK derives the wallet PDA address from
+`agentAsset + wallet`.
 
 ## License
 

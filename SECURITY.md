@@ -26,6 +26,14 @@ in any report.
 Only the latest `main` branch and the published devnet candidate manifest are
 currently supported for security review.
 
+## Developer Safety Checklist
+
+- Do not use Agent Vault with valuable assets while it is a devnet candidate.
+- Keep SDK writes gated by deployment verification.
+- Keep `allowUnverifiedDeployment` limited to localnet or devnet deployments you control.
+- In docs and integrations, distinguish `agentAsset` from wallet PDA addresses and wallet indexes.
+- Never request or store private keys, seed phrases, wallet backups, or production secrets.
+
 ## Release Expectations
 
 Production releases should keep SDK writes fail-closed against a published

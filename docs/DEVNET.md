@@ -3,6 +3,25 @@
 Agent Vault is currently a devnet candidate. It is WIP, unaudited, and not a
 mainnet release.
 
+## Fast Path
+
+Program checks:
+
+```bash
+NO_DNA=1 cargo test --offline
+NO_DNA=1 cargo test --offline --manifest-path tests/runtime/Cargo.toml -- --test-threads=1
+```
+
+SDK preflight:
+
+```bash
+cd ../agent-vault-sdk
+NO_DNA=1 npm run check
+NO_DNA=1 npm run e2e:devnet
+```
+
+`npm run e2e:devnet` is preflight-only unless `AGENT_VAULT_E2E_SEND=1` is set.
+
 ## Deployment
 
 ```text
@@ -46,9 +65,9 @@ onchain devnet deployment verification.
 From the SDK repository:
 
 ```bash
-npm ci
-npm run check
-npm run e2e:devnet
+NO_DNA=1 npm ci
+NO_DNA=1 npm run check
+NO_DNA=1 npm run e2e:devnet
 ```
 
 `npm run e2e:devnet` defaults to preflight-only mode. It verifies the live devnet

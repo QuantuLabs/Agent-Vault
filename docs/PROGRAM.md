@@ -4,6 +4,14 @@ Agent Vault is a no-Anchor Pinocchio program for 8004 Metaplex Core Asset
 owners. One live Core Asset owner controls an indexed set of PDA wallets derived
 from the asset address.
 
+## SDK Builder Notes
+
+- `agent_asset` is passed to the program as the Metaplex Core Asset account.
+- The SDK name for that pubkey is `agentAsset`.
+- Wallet instructions take a `u16` index; the SDK option is usually named `wallet`, `from`, or `to`.
+- The wallet PDA address is always derived from `agentAsset + index`; users should not type it into write APIs.
+- Listing wallets is a read-side SDK operation, not a program instruction.
+
 ## PDA Model
 
 ```text
@@ -15,7 +23,9 @@ agent_account = PDA(["agent", agent_asset], 8004 registry program)
 
 `vault_config.wallet_count` is the onchain source of truth for wallet
 enumeration. Clients derive wallet indexes from `0..wallet_count` and fetch the
-PDA accounts directly; no indexer is required for wallet listing.
+PDA accounts directly; no indexer is required for wallet listing. The SDK
+exposes this as paginated `list(...)` and explicit full enumeration through
+`listAll(...)`.
 
 ## Accounts
 
